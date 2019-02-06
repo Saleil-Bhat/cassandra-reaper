@@ -30,6 +30,7 @@ import io.cassandrareaper.service.RepairParameters;
 import io.cassandrareaper.service.RingRange;
 import io.cassandrareaper.storage.postgresql.BigIntegerArgumentFactory;
 import io.cassandrareaper.storage.postgresql.IStoragePostgreSql;
+import io.cassandrareaper.storage.postgresql.InstantArgumentFactory;
 import io.cassandrareaper.storage.postgresql.LongCollectionSqlTypeArgumentFactory;
 import io.cassandrareaper.storage.postgresql.PostgresArrayArgumentFactory;
 import io.cassandrareaper.storage.postgresql.PostgresRepairSegment;
@@ -64,17 +65,17 @@ import org.slf4j.LoggerFactory;
 /**
  * Implements the StorageAPI using PostgreSQL database.
  */
-public final class PostgresStorage implements IStorage {
+public class PostgresStorage implements IStorage {
 
   private static final Logger LOG = LoggerFactory.getLogger(PostgresStorage.class);
 
-  private final DBI jdbi;
+  protected final DBI jdbi;
 
   public PostgresStorage(DBI jdbi) {
     this.jdbi = jdbi;
   }
 
-  private static IStoragePostgreSql getPostgresStorage(Handle handle) {
+  protected static IStoragePostgreSql getPostgresStorage(Handle handle) {
     handle.registerArgumentFactory(new LongCollectionSqlTypeArgumentFactory());
     handle.registerArgumentFactory(new PostgresArrayArgumentFactory());
     handle.registerArgumentFactory(new RunStateArgumentFactory());
@@ -83,6 +84,7 @@ public final class PostgresStorage implements IStorage {
     handle.registerArgumentFactory(new BigIntegerArgumentFactory());
     handle.registerArgumentFactory(new ScheduleStateArgumentFactory());
     handle.registerArgumentFactory(new UuidArgumentFactory());
+    handle.registerArgumentFactory(new InstantArgumentFactory());
     return handle.attach(IStoragePostgreSql.class);
   }
 
