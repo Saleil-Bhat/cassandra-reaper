@@ -19,6 +19,7 @@ package io.cassandrareaper.storage.postgresql;
 
 import io.cassandrareaper.core.Cluster;
 import io.cassandrareaper.core.DiagEventSubscription;
+import io.cassandrareaper.core.NodeMetrics;
 import io.cassandrareaper.core.RepairRun;
 import io.cassandrareaper.core.RepairSchedule;
 import io.cassandrareaper.core.RepairSegment;
@@ -29,12 +30,14 @@ import io.cassandrareaper.resources.view.RepairScheduleStatus;
 import io.cassandrareaper.service.RepairParameters;
 
 import java.math.BigInteger;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 import org.skife.jdbi.v2.sqlobject.Bind;
 import org.skife.jdbi.v2.sqlobject.BindBean;
@@ -262,6 +265,71 @@ public interface IStoragePostgreSql {
 
   String SQL_DELETE_EVENT_SUBSCRIPTION_BY_ID
       = "DELETE FROM diag_event_subscription WHERE id = :id";
+
+  // leader election
+  //
+  String SQL_INSERT_LEAD = "INSERT INTO leader (leader_id, reaper_instance_id, reaper_instance_host, last_heartbeat)"
+          + " VALUES "
+          + "(:leaderId, :reaperInstanceId, :reaperInstanceHost, now())";
+
+  String SQL_UPDATE_LEAD = "UPDATE leader "
+          + " SET "
+          + "reaper_instance_id = :reaperInstanceId, reaper_instance_host = :reaperInstanceHost, last_heartbeat = now()"
+          + " WHERE "
+          + "leader_id = :leaderId AND last_heartbeat < :expirationTime";
+
+  String SQL_RENEW_LEAD = "UPDATE leader "
+      + " SET "
+      + "reaper_instance_id = :reaperInstanceId, reaper_instance_host = :reaperInstanceHost, last_heartbeat = now()"
+      + " WHERE "
+      + "leader_id = :leaderId AND reaper_instance_id = :reaperInstanceId";
+
+  String SQL_SELECT_ACTIVE_LEADERS = "SELECT leader_id from leader"
+      + " WHERE "
+      + " last_heartbeat >= :expirationTime";
+
+  String SQL_RELEASE_LEAD = "DELETE FROM leader"
+      + " WHERE "
+      + "leader_id = :leaderId AND reaper_instance_id = :reaperInstanceId";
+
+  String SQL_FORCE_RELEASE_LEAD = "DELETE FROM leader WHERE leader_id = :leaderId";
+
+  String SQL_INSERT_HEARTBEAT = "INSERT INTO running_reapers(reaper_instance_id, reaper_instance_host, last_heartbeat)"
+      + " VALUES "
+      + "(:reaperInstanceId, :reaperInstanceHost, now())";
+
+  String SQL_UPDATE_HEARTBEAT = "UPDATE running_reapers"
+      + " SET "
+      + "reaper_instance_id = :reaperInstanceId, reaper_instance_host = :reaperInstanceHost, last_heartbeat = now()"
+      + " WHERE "
+      + "reaper_instance_id = :reaperInstanceId";
+
+  String SQL_DELETE_OLD_REAPERS = "DELETE FROM running_reapers"
+      + " WHERE "
+      + "last_heartbeat < :expirationTime";
+
+  String SQL_COUNT_RUNNING_REAPERS = "SELECT COUNT(*) FROM running_reapers"
+      + " WHERE "
+      + "last_heartbeat >= :expirationTime";
+
+  String SQL_STORE_NODE_METRICS =  "INSERT INTO node_metrics_v1 (time_partition,run_id,node,datacenter,"
+      + "cluster,requested,pending_compactions,has_repair_running,active_anticompactions)"
+      + " VALUES "
+      + "(:timePartition, :runId, :node, :datacenter, :cluster, :requested, :pendingCompactions, :hasRepairRunning, "
+      + ":activeAntiCompactions)";
+
+  String SQL_GET_NODE_METRICS = "SELECT * FROM node_metrics_v1"
+      + " WHERE "
+      + "time_partition = :timePartition AND run_id = :runId";
+
+  String SQL_GET_NODE_METRICS_BY_NODE = "SELECT * FROM node_metrics_v1"
+      + " WHERE "
+      + "time_partition = :timePartition AND run_id = :runId AND node = :node";
+
+  String SQL_DELETE_OLD_METRICS = "DELETE FROM node_metrics_v1"
+      + " WHERE "
+      + "time_partition < :expirationMinute";
+
 
   static String[] parseStringArray(Object obj) {
     String[] values = null;
@@ -515,4 +583,97 @@ public interface IStoragePostgreSql {
   @SqlUpdate(SQL_DELETE_EVENT_SUBSCRIPTION_BY_ID)
   int deleteEventSubscription(
           @Bind("id") long subscriptionId);
+
+  @SqlUpdate(SQL_INSERT_LEAD)
+  int insertLeaderEntry(
+      @Bind("leaderId") UUID leaderId,
+      @Bind("reaperInstanceId") UUID reaperInstanceId,
+      @Bind("reaperInstanceHost") String reaperInstanceHost
+  );
+
+  @SqlUpdate(SQL_UPDATE_LEAD)
+  int updateLeaderEntry(
+      @Bind("leaderId") UUID leaderId,
+      @Bind("reaperInstanceId") UUID reaperInstanceId,
+      @Bind("reaperInstanceHost") String reaperInstanceHost,
+      @Bind("expirationTime") Instant expirationTime
+  );
+
+  @SqlUpdate(SQL_RENEW_LEAD)
+  int renewLead(
+      @Bind("leaderId") UUID leaderId,
+      @Bind("reaperInstanceId") UUID reaperInstanceId,
+      @Bind("reaperInstanceHost") String reaperInstanceHost
+  );
+
+  @SqlQuery(SQL_SELECT_ACTIVE_LEADERS)
+  List<Long> getLeaders(
+      @Bind("expirationTime") Instant expirationTime
+  );
+
+  @SqlUpdate(SQL_RELEASE_LEAD)
+  int releaseLead(
+      @Bind("leaderId") UUID leaderId,
+      @Bind("reaperInstanceId") UUID reaperInstanceId
+  );
+
+  @SqlUpdate(SQL_FORCE_RELEASE_LEAD)
+  int forceReleaseLead(
+      @Bind("leaderId") UUID leaderId
+  );
+
+  @SqlUpdate(SQL_INSERT_HEARTBEAT)
+  int insertHeartbeat(
+      @Bind("reaperInstanceId") UUID reaperInstanceId,
+      @Bind("reaperInstanceHost") String reaperInstanceHost
+  );
+
+  @SqlUpdate(SQL_UPDATE_HEARTBEAT)
+  int updateHeartbeat(
+      @Bind("reaperInstanceId") UUID reaperInstanceId,
+      @Bind("reaperInstanceHost") String reaperInstanceHost
+  );
+
+  @SqlUpdate(SQL_DELETE_OLD_REAPERS)
+  int deleteOldReapers(
+      @Bind("expirationTime") Instant expirationTime
+  );
+
+  @SqlQuery(SQL_COUNT_RUNNING_REAPERS)
+  int countRunningReapers(
+      @Bind("expirationTime") Instant expirationTime
+  );
+
+  @SqlUpdate(SQL_STORE_NODE_METRICS)
+  int storeNodeMetrics(
+      @Bind("timePartition") long timePartition,
+      @Bind("runId") long runId,
+      @Bind("node") String node,
+      @Bind("cluster") String cluster,
+      @Bind("datacenter") String datacenter,
+      @Bind("requested") Boolean requested,
+      @Bind("pendingCompactions") int pendingCompactions,
+      @Bind("hasRepairRunning") Boolean hasRepairRunning,
+      @Bind("activeAntiCompactions") int activeAntiCompactions
+  );
+
+  @SqlQuery(SQL_GET_NODE_METRICS)
+  @Mapper(NodeMetricsMapper.class)
+  Collection<NodeMetrics> getNodeMetrics(
+      @Bind("timePartition") long timePartition,
+      @Bind("runId") long runId
+  );
+
+  @SqlQuery(SQL_GET_NODE_METRICS_BY_NODE)
+  @Mapper(NodeMetricsMapper.class)
+  NodeMetrics getNodeMetricsByNode(
+      @Bind("timePartition") long timePartition,
+      @Bind("runId") long runId,
+      @Bind("node") String node
+  );
+
+  @SqlUpdate(SQL_DELETE_OLD_METRICS)
+  int deleteOldMetrics(
+      @Bind("expirationMinute") long expirationMinute
+  );
 }
