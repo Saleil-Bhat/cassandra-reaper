@@ -277,6 +277,16 @@ public final class ReaperApplicationConfiguration extends Configuration {
     this.relationalDb = postgres;
   }
 
+  @JsonProperty("multireaper-postgres")
+  public DataSourceFactory getMultiReaperPostgresDataSourceFactory() {
+    return relationalDb;
+  }
+
+  @JsonProperty("multireaper-postgres")
+  public void setMultiReaperPostgresDataSourceFactory(DataSourceFactory mrPostgres) {
+    this.relationalDb = mrPostgres;
+  }
+
   public int getRepairManagerSchedulingIntervalSeconds() {
     return this.repairManagerSchedulingIntervalSeconds == null ? 30 : this.repairManagerSchedulingIntervalSeconds;
   }
