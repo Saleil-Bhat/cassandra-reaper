@@ -89,6 +89,7 @@ public class MultiReaperPostgresStorage extends PostgresStorage implements IStor
         }
       }
     }
+    LOG.warn("Unknown error occurred while taking lead on segment {}", leaderId);
     return false;
   }
 
@@ -161,7 +162,8 @@ public class MultiReaperPostgresStorage extends PostgresStorage implements IStor
         return getPostgresStorage(h).countRunningReapers(getExpirationTime(reaperTimeout));
       }
     }
-    return 0;
+    LOG.warn("Failed to get running reaper count from storage");
+    return 1;
   }
 
   public void storeNodeMetrics(UUID runId, NodeMetrics nodeMetrics) {
