@@ -441,7 +441,7 @@ public final class ReaperApplication extends Application<ReaperApplicationConfig
     } else if ("multireaper-postgres".equalsIgnoreCase(config.getStorageType())) {
       // create DBI instance
       final DBIFactory factory = new DBIFactory();
-      if (StringUtils.isEmpty(config.getDataSourceFactory().getDriverClass())){
+      if (StringUtils.isEmpty(config.getDataSourceFactory().getDriverClass())) {
         config.getDataSourceFactory().setDriverClass("org.postgresql.Driver");
       }
       // instantiate store
