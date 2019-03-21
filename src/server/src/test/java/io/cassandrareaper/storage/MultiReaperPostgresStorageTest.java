@@ -395,4 +395,37 @@ public class MultiReaperPostgresStorageTest {
         .first();
     Assertions.assertThat(numMetrics).isEqualTo(0);
   }
+
+  @Test
+  public void testManualDeleteNodeMetrics() {
+    DBI dbi = new DBI(DB_URL);
+    MultiReaperPostgresStorage storage = new MultiReaperPostgresStorage(dbi);
+    Assertions.assertThat(storage.isStorageConnected()).isTrue();
+
+    Handle handle = dbi.open();
+    handle.execute("DELETE from node_metrics_v1");
+
+    UUID runId = UUID.randomUUID();
+    NodeMetrics originalNm = NodeMetrics.builder()
+        .withNode("fake_node")
+        .withCluster("fake_cluster")
+        .withDatacenter("NYDC")
+        .withHasRepairRunning(true)
+        .withPendingCompactions(4)
+        .withActiveAnticompactions(1)
+        .build();
+    storage.storeNodeMetrics(runId, originalNm);
+
+    int numMetrics = handle.createQuery("SELECT COUNT(*) FROM node_metrics_v1")
+        .mapTo(Integer.class)
+        .first();
+    Assertions.assertThat(numMetrics).isEqualTo(3);  // bc default reaper timeout is 3 minutes
+
+    // delete metric from table and verify delete succeeds
+    storage.deleteNodeMetrics(runId, "fake_node");
+    numMetrics = handle.createQuery("SELECT COUNT(*) FROM node_metrics_v1")
+        .mapTo(Integer.class)
+        .first();
+    Assertions.assertThat(numMetrics).isEqualTo(2);
+  }
 }

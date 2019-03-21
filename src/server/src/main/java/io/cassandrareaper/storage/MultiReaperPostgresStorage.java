@@ -217,6 +217,19 @@ public class MultiReaperPostgresStorage extends PostgresStorage implements IStor
     return Optional.empty();
   }
 
+  public void deleteNodeMetrics(UUID runId, String node) {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        long minute = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis());
+        getPostgresStorage(h).deleteNodeMetricsByNode(
+            minute,
+            UuidUtil.toSequenceId(runId),
+            node
+        );
+      }
+    }
+  }
+
   private void beat() {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {

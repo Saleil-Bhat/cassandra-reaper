@@ -299,6 +299,10 @@ public interface IStoragePostgreSql {
       + " WHERE "
       + "time_partition = :timePartition AND run_id = :runId AND node = :node";
 
+  String SQL_DELETE_NODE_METRICS_BY_NODE = "DELETE FROM node_metrics_v1"
+      + " WHERE "
+      + " time_partition = :timePartition AND run_id = :runId AND node = :node";
+
   String SQL_DELETE_OLD_METRICS = "DELETE FROM node_metrics_v1"
       + " WHERE "
       + "time_partition < :expirationMinute";
@@ -614,6 +618,13 @@ public interface IStoragePostgreSql {
   @SqlQuery(SQL_GET_NODE_METRICS_BY_NODE)
   @Mapper(NodeMetricsMapper.class)
   NodeMetrics getNodeMetricsByNode(
+      @Bind("timePartition") long timePartition,
+      @Bind("runId") long runId,
+      @Bind("node") String node
+  );
+
+  @SqlUpdate(SQL_DELETE_NODE_METRICS_BY_NODE)
+  int deleteNodeMetricsByNode(
       @Bind("timePartition") long timePartition,
       @Bind("runId") long runId,
       @Bind("node") String node
