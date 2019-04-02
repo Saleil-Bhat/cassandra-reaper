@@ -39,7 +39,6 @@ import io.cassandrareaper.storage.CassandraStorage;
 import io.cassandrareaper.storage.IDistributedStorage;
 import io.cassandrareaper.storage.IStorage;
 import io.cassandrareaper.storage.MemoryStorage;
-import io.cassandrareaper.storage.MultiReaperPostgresStorage;
 import io.cassandrareaper.storage.PostgresStorage;
 
 import java.util.EnumSet;
@@ -366,16 +365,6 @@ public final class ReaperApplication extends Application<ReaperApplicationConfig
       storage = new MemoryStorage();
     } else if ("cassandra".equalsIgnoreCase(config.getStorageType())) {
       storage = new CassandraStorage(config, environment);
-    } else if ("multireaper-postgres".equalsIgnoreCase(config.getStorageType())) {
-      // create DBI instance
-      final DBIFactory factory = new DBIFactory();
-      if (StringUtils.isEmpty(config.getDataSourceFactory().getDriverClass())) {
-        config.getDataSourceFactory().setDriverClass("org.postgresql.Driver");
-      }
-      // instantiate store
-      storage = new MultiReaperPostgresStorage(
-          factory.build(environment, config.getDataSourceFactory(), "postgresql"));
-      initDatabase(config);
     } else if ("postgres".equalsIgnoreCase(config.getStorageType())
         || "h2".equalsIgnoreCase(config.getStorageType())
         || "database".equalsIgnoreCase(config.getStorageType())) {
@@ -432,12 +421,7 @@ public final class ReaperApplication extends Application<ReaperApplicationConfig
         dsfactory.getUser(),
         dsfactory.getPassword());
 
-    String storageDir = config.getStorageType().toLowerCase();
-    if (storageDir.contains("postgres")) {
-      storageDir = "postgres";
-    }
-
-    if ("database".equals(storageDir)) {
+    if ("database".equals(config.getStorageType())) {
       LOG.warn("!!!!!!!!!!    USAGE 'database' AS STORAGE TYPE IS NOW DEPRECATED   !!!!!!!!!!!!!!");
       LOG.warn("!!!!!!!!!!    PLEASE USE EITHER 'postgres' OR 'h2' FROM NOW ON     !!!!!!!!!!!!!!");
       if (config.getDataSourceFactory().getUrl().contains("h2")) {
@@ -446,7 +430,7 @@ public final class ReaperApplication extends Application<ReaperApplicationConfig
         flyway.setLocations("/db/postgres");
       }
     } else {
-      flyway.setLocations("/db/".concat(storageDir));
+      flyway.setLocations("/db/".concat(config.getStorageType().toLowerCase()));
     }
     flyway.setBaselineOnMigrate(true);
     flyway.repair();

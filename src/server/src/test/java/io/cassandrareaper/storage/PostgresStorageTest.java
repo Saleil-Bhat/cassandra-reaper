@@ -19,7 +19,6 @@ package io.cassandrareaper.storage;
 
 import io.cassandrareaper.AppContext;
 import io.cassandrareaper.core.NodeMetrics;
-import io.cassandrareaper.storage.MultiReaperPostgresStorage;
 import io.cassandrareaper.storage.postgresql.IStoragePostgreSql;
 import io.cassandrareaper.storage.postgresql.UuidUtil;
 
@@ -51,7 +50,7 @@ import org.junit.Test;
 import org.skife.jdbi.v2.DBI;
 import org.skife.jdbi.v2.Handle;
 
-public class MultiReaperPostgresStorageTest {
+public class PostgresStorageTest {
 
   private static final String DB_URL = "jdbc:h2:mem:test_mem;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false";
 
@@ -85,7 +84,7 @@ public class MultiReaperPostgresStorageTest {
   @Test
   public void testTakeLead() {
     DBI dbi = new DBI(DB_URL);
-    MultiReaperPostgresStorage storage = new MultiReaperPostgresStorage(dbi);
+    PostgresStorage storage = new PostgresStorage(dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -114,7 +113,7 @@ public class MultiReaperPostgresStorageTest {
   @Test
   public void testNoLeaders() {
     DBI dbi = new DBI(DB_URL);
-    MultiReaperPostgresStorage storage = new MultiReaperPostgresStorage(dbi);
+    PostgresStorage storage = new PostgresStorage(dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -127,7 +126,7 @@ public class MultiReaperPostgresStorageTest {
   @Test
   public void testRenewLead() throws InterruptedException {
     DBI dbi = new DBI(DB_URL);
-    MultiReaperPostgresStorage storage = new MultiReaperPostgresStorage(dbi);
+    PostgresStorage storage = new PostgresStorage(dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -155,7 +154,7 @@ public class MultiReaperPostgresStorageTest {
   @Test
   public void testReleaseLead() {
     DBI dbi = new DBI(DB_URL);
-    MultiReaperPostgresStorage storage = new MultiReaperPostgresStorage(dbi);
+    PostgresStorage storage = new PostgresStorage(dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -188,7 +187,7 @@ public class MultiReaperPostgresStorageTest {
   @Test
   public void testForceReleaseLead() {
     DBI dbi = new DBI(DB_URL);
-    MultiReaperPostgresStorage storage = new MultiReaperPostgresStorage(dbi);
+    PostgresStorage storage = new PostgresStorage(dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -221,7 +220,7 @@ public class MultiReaperPostgresStorageTest {
   @Test
   public void testSaveHeartbeat() {
     DBI dbi = new DBI(DB_URL);
-    MultiReaperPostgresStorage storage = new MultiReaperPostgresStorage(dbi);
+    PostgresStorage storage = new PostgresStorage(dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -235,7 +234,7 @@ public class MultiReaperPostgresStorageTest {
   @Test
   public void testNodeMetrics() {
     DBI dbi = new DBI(DB_URL);
-    MultiReaperPostgresStorage storage = new MultiReaperPostgresStorage(dbi);
+    PostgresStorage storage = new PostgresStorage(dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -272,7 +271,7 @@ public class MultiReaperPostgresStorageTest {
   @Test
   public void testNodeMetricsByNode() {
     DBI dbi = new DBI(DB_URL);
-    MultiReaperPostgresStorage storage = new MultiReaperPostgresStorage(dbi);
+    PostgresStorage storage = new PostgresStorage(dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -313,7 +312,7 @@ public class MultiReaperPostgresStorageTest {
   public void testUpdateLeaderEntry() throws InterruptedException {
     System.out.println("Testing leader timeout (this will take a minute)...");
     DBI dbi = new DBI(DB_URL);
-    MultiReaperPostgresStorage storage = new MultiReaperPostgresStorage(dbi, 1, 1);
+    PostgresStorage storage = new PostgresStorage(dbi, 1, 1);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -353,7 +352,7 @@ public class MultiReaperPostgresStorageTest {
   public void testDeleteOldNodeMetrics() throws InterruptedException {
     System.out.println("Testing metrics timeout (this will take a few minutes)...");
     DBI dbi = new DBI(DB_URL);
-    MultiReaperPostgresStorage storage = new MultiReaperPostgresStorage(dbi, 1, 1);
+    PostgresStorage storage = new PostgresStorage(dbi, 1, 1);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -399,7 +398,7 @@ public class MultiReaperPostgresStorageTest {
   @Test
   public void testManualDeleteNodeMetrics() {
     DBI dbi = new DBI(DB_URL);
-    MultiReaperPostgresStorage storage = new MultiReaperPostgresStorage(dbi);
+    PostgresStorage storage = new PostgresStorage(dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
