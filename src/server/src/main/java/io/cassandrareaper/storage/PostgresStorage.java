@@ -19,6 +19,10 @@ package io.cassandrareaper.storage;
 
 import io.cassandrareaper.core.Cluster;
 import io.cassandrareaper.core.DiagEventSubscription;
+import io.cassandrareaper.AppContext;
+import io.cassandrareaper.ReaperException;
+import io.cassandrareaper.core.Cluster;
+import io.cassandrareaper.core.NodeMetrics;
 import io.cassandrareaper.core.RepairRun;
 import io.cassandrareaper.core.RepairSchedule;
 import io.cassandrareaper.core.RepairSegment;
@@ -31,6 +35,7 @@ import io.cassandrareaper.service.RingRange;
 import io.cassandrareaper.storage.postgresql.BigIntegerArgumentFactory;
 import io.cassandrareaper.storage.postgresql.IStoragePostgreSql;
 import io.cassandrareaper.storage.postgresql.InstantArgumentFactory;
+import io.cassandrareaper.storage.postgresql.JdbiExceptionUtil;
 import io.cassandrareaper.storage.postgresql.LongCollectionSqlTypeArgumentFactory;
 import io.cassandrareaper.storage.postgresql.PostgresArrayArgumentFactory;
 import io.cassandrareaper.storage.postgresql.PostgresRepairSegment;
@@ -41,6 +46,8 @@ import io.cassandrareaper.storage.postgresql.StateArgumentFactory;
 import io.cassandrareaper.storage.postgresql.UuidArgumentFactory;
 import io.cassandrareaper.storage.postgresql.UuidUtil;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -49,6 +56,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -60,20 +69,34 @@ import org.joda.time.DateTime;
 import org.skife.jdbi.v2.DBI;
 import org.skife.jdbi.v2.Handle;
 import org.skife.jdbi.v2.exceptions.DBIException;
+import org.skife.jdbi.v2.exceptions.UnableToExecuteStatementException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Implements the StorageAPI using PostgreSQL database.
  */
-public class PostgresStorage implements IStorage {
+public class PostgresStorage implements IStorage, IDistributedStorage {
 
   private static final Logger LOG = LoggerFactory.getLogger(PostgresStorage.class);
+  private static final int DEFAULT_LEADER_TIMEOUT_MIN = 10;  // pulled value from Cassandra DDL
+  private static final int DEFAULT_REAPER_TIMEOUT_MIN = 3;   // pulled value from Cassandra DDL
 
   protected final DBI jdbi;
+  private final Duration leaderTimeout;
+  private final Duration reaperTimeout;
+
 
   public PostgresStorage(DBI jdbi) {
     this.jdbi = jdbi;
+    leaderTimeout = Duration.ofMinutes(DEFAULT_LEADER_TIMEOUT_MIN);
+    reaperTimeout = Duration.ofMinutes(DEFAULT_REAPER_TIMEOUT_MIN);
+  }
+
+  public PostgresStorage(DBI jdbi, int leaderTimeoutInMinutes, int reaperTimeoutInMinutes) {
+    this.jdbi = jdbi;
+    leaderTimeout = Duration.ofMinutes(leaderTimeoutInMinutes);
+    reaperTimeout = Duration.ofMinutes(reaperTimeoutInMinutes);
   }
 
   protected static IStoragePostgreSql getPostgresStorage(Handle handle) {
@@ -634,4 +657,229 @@ public class PostgresStorage implements IStorage {
       return getPostgresStorage(h).deleteEventSubscription(UuidUtil.toSequenceId(id)) > 0;
     }
   }
+
+  public boolean takeLead(UUID leaderId) {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        try {
+          int rowsInserted = getPostgresStorage(h).insertLeaderEntry(
+              leaderId,
+              AppContext.REAPER_INSTANCE_ID,
+              AppContext.REAPER_INSTANCE_ADDRESS
+          );
+          if (rowsInserted == 1) {  // insert should modify exactly 1 row
+            return true;
+          }
+        } catch (UnableToExecuteStatementException e) {
+          if (JdbiExceptionUtil.isDuplicateKeyError(e)) {
+            // if it's a duplicate key error, then try to update it
+            int rowsUpdated = getPostgresStorage(h).updateLeaderEntry(
+                leaderId,
+                AppContext.REAPER_INSTANCE_ID,
+                AppContext.REAPER_INSTANCE_ADDRESS,
+                getExpirationTime(leaderTimeout)
+            );
+            if (rowsUpdated == 1) {  // if row updated, took ownership from an expired leader
+              LOG.debug("Took lead from expired entry for segment {}", leaderId);
+              return true;
+            }
+          }
+          return false;
+        }
+      }
+    }
+    LOG.warn("Unknown error occurred while taking lead on segment {}", leaderId);
+    return false;
+  }
+
+  @Override
+  public boolean renewLead(UUID leaderId) {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        int rowsUpdated = getPostgresStorage(h).renewLead(
+            leaderId,
+            AppContext.REAPER_INSTANCE_ID,
+            AppContext.REAPER_INSTANCE_ADDRESS
+        );
+
+        if (rowsUpdated == 1) {
+          LOG.debug("Renewed lead on segment {}", leaderId);
+          return true;
+        }
+        LOG.error("Failed to renew lead on segment {}", leaderId);
+      }
+    }
+    return false;
+  }
+
+  @Override
+  public List<UUID> getLeaders() {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        List<Long> leaderSequenceIds = getPostgresStorage(h).getLeaders(getExpirationTime(leaderTimeout));
+        return leaderSequenceIds
+            .stream()
+            .map(UuidUtil::fromSequenceId)
+            .collect(Collectors.toList());
+      }
+    }
+    return new ArrayList<>();
+  }
+
+  @Override
+  public void releaseLead(UUID leaderId) {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        int rowsDeleted = getPostgresStorage(h).releaseLead(
+            leaderId,
+            AppContext.REAPER_INSTANCE_ID
+        );
+        if (rowsDeleted == 1) {
+          LOG.debug("Released lead on segment {}", leaderId);
+        } else {
+          LOG.error("Could not release lead on segment {}", leaderId);
+        }
+      }
+    }
+  }
+
+  @Override
+  public void forceReleaseLead(UUID leaderId) {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        getPostgresStorage(h).forceReleaseLead(leaderId);
+        LOG.debug("Force released lead on segment {}", leaderId);
+      }
+    }
+  }
+
+  @Override
+  public void saveHeartbeat() {
+    beat();
+    deleteOldReapers();
+    deleteOldMetrics();
+  }
+
+  @Override
+  public int countRunningReapers() {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        return getPostgresStorage(h).countRunningReapers(getExpirationTime(reaperTimeout));
+      }
+    }
+    LOG.warn("Failed to get running reaper count from storage");
+    return 1;
+  }
+
+  @Override
+  public void storeNodeMetrics(UUID runId, NodeMetrics nodeMetrics) {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        long minute = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis());
+        for (int offset = 0; offset < reaperTimeout.toMinutes(); ++offset) {
+          getPostgresStorage(h).storeNodeMetrics(
+              minute + offset,
+              UuidUtil.toSequenceId(runId),
+              nodeMetrics.getNode(),
+              nodeMetrics.getCluster(),
+              nodeMetrics.getDatacenter(),
+              nodeMetrics.isRequested(),
+              nodeMetrics.getPendingCompactions(),
+              nodeMetrics.hasRepairRunning(),
+              nodeMetrics.getActiveAnticompactions()
+          );
+        }
+      }
+    }
+  }
+
+  @Override
+  public Collection<NodeMetrics> getNodeMetrics(UUID runId) {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        long minute = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis());
+        return getPostgresStorage(h).getNodeMetrics(
+            minute,
+            UuidUtil.toSequenceId(runId)
+        );
+      }
+    }
+    return new ArrayList<>();
+  }
+
+  @Override
+  public Optional<NodeMetrics> getNodeMetrics(UUID runId, String node) {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        long minute = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis());
+        NodeMetrics nm = getPostgresStorage(h).getNodeMetricsByNode(
+            minute,
+            UuidUtil.toSequenceId(runId),
+            node
+        );
+        if (nm != null) {
+          return Optional.of(nm);
+        }
+      }
+    }
+    return Optional.empty();
+  }
+
+  @Override
+  public void deleteNodeMetrics(UUID runId, String node) {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        long minute = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis());
+        getPostgresStorage(h).deleteNodeMetricsByNode(
+            minute,
+            UuidUtil.toSequenceId(runId),
+            node
+        );
+      }
+    }
+  }
+
+  private void beat() {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        int rowsUpdated = getPostgresStorage(h).updateHeartbeat(
+            AppContext.REAPER_INSTANCE_ID,
+            AppContext.REAPER_INSTANCE_ADDRESS
+        );
+        if (rowsUpdated == 0) {
+          LOG.debug("Creating new entry for reaper {}", AppContext.REAPER_INSTANCE_ID);
+          int rowsInserted = getPostgresStorage(h).insertHeartbeat(
+              AppContext.REAPER_INSTANCE_ID,
+              AppContext.REAPER_INSTANCE_ADDRESS
+          );
+          if (rowsInserted != 1) {
+            LOG.error("Failed to create entry for reaper {}", AppContext.REAPER_INSTANCE_ID);
+          }
+        }
+      }
+    }
+  }
+
+  private void deleteOldReapers() {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        getPostgresStorage(h).deleteOldReapers(getExpirationTime(reaperTimeout));
+      }
+    }
+  }
+
+  public void deleteOldMetrics() {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        long expirationMinute = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis())
+            - reaperTimeout.toMinutes();
+        getPostgresStorage(h).deleteOldMetrics(expirationMinute);
+      }
+    }
+  }
+
+  private Instant getExpirationTime(Duration timeout) {
+    return Instant.now().minus(timeout);
+  }
+
 }
