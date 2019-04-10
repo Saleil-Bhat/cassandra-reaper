@@ -18,7 +18,10 @@
 package io.cassandrareaper.acceptance;
 
 
+import java.util.List;
 import java.util.Optional;
+import java.util.Random;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import cucumber.api.CucumberOptions;
 import cucumber.api.junit.Cucumber;
@@ -40,7 +43,10 @@ public class ReaperPostgresIT {
 
   private static final Logger LOG = LoggerFactory.getLogger(ReaperPostgresIT.class);
   private static ReaperTestJettyRunner runner;
+  private static final List<ReaperTestJettyRunner> RUNNER_INSTANCES = new CopyOnWriteArrayList<>();
   private static final String POSTGRES_CONFIG_FILE = "cassandra-reaper-postgres-at.yaml";
+  private static final Random RAND = new Random(System.nanoTime());
+  private static Thread GRIM_REAPER;
 
 
   protected ReaperPostgresIT() {}
@@ -49,14 +55,52 @@ public class ReaperPostgresIT {
   public static void setUp() throws Exception {
     LOG.info("setting up testing Reaper runner with {} seed hosts defined and Postgres storage",
         TestContext.TEST_CLUSTER_SEED_HOSTS.size());
-    runner = new ReaperTestJettyRunner(POSTGRES_CONFIG_FILE, Optional.empty());
-    BasicSteps.addReaperRunner(runner);
+
+    int minReaperInstances = Integer.getInteger("grim.reaper.min", 1);
+    int maxReaperInstances = Integer.getInteger("grim.reaper.max", minReaperInstances);
+
+    for (int i = 0; i < minReaperInstances; ++i) {
+      createReaperTestJettyRunner(Optional.empty());
+    }
+
+    GRIM_REAPER = new Thread(() -> {
+      Thread.currentThread().setName("GRIM REAPER");
+      while (!Thread.currentThread().isInterrupted()) { //keep adding/removing reaper instances while test is running
+        try {
+          if (maxReaperInstances > RUNNER_INSTANCES.size()) {
+            createReaperTestJettyRunner(Optional.empty());
+          } else {
+            int remove = minReaperInstances + RAND.nextInt(maxReaperInstances - minReaperInstances);
+            removeReaperTestJettyRunner(RUNNER_INSTANCES.get(remove));
+          }
+        } catch (RuntimeException | InterruptedException ex) {
+          LOG.error("failed adding/removing reaper instance", ex);
+        }
+      }
+    });
+    if (minReaperInstances < maxReaperInstances) {
+      GRIM_REAPER.start();
+    }
   }
 
   @AfterClass
   public static void tearDown() {
     LOG.info("Stopping reaper service...");
-    runner.runnerInstance.after();
+    GRIM_REAPER.interrupt();
+    RUNNER_INSTANCES.forEach(r -> r.runnerInstance.after());
   }
 
+  private static void createReaperTestJettyRunner(Optional<String> version) throws InterruptedException {
+    ReaperTestJettyRunner runner = new ReaperTestJettyRunner(POSTGRES_CONFIG_FILE, version);
+    RUNNER_INSTANCES.add(runner);
+    Thread.sleep(100);
+    BasicSteps.addReaperRunner(runner);
+  }
+
+  private static void removeReaperTestJettyRunner(ReaperTestJettyRunner runner) throws InterruptedException {
+    BasicSteps.removeReaperRunner(runner);
+    Thread.sleep(200);
+    runner.runnerInstance.after();
+    RUNNER_INSTANCES.remove(runner);
+  }
 }
