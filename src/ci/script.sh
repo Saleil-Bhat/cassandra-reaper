@@ -47,9 +47,9 @@ case "${TEST_TYPE}" in
             mvn -B surefire:test -DsurefireArgLine="-Xmx256m"  -Dtest=ReaperShiroIT
             mvn -B surefire:test -DsurefireArgLine="-Xmx256m"  -Dtest=ReaperIT
             mvn -B surefire:test -DsurefireArgLine="-Xmx256m"  -Dtest=ReaperH2IT
-            mvn -B surefire:test -DsurefireArgLine="-Xmx256m"  -Dtest=ReaperPostgresIT
         else
             mvn -B package -DskipTests
+            mvn -B surefire:test -DsurefireArgLine="-Xmx256m" -Dtest=ReaperPostgresIT -Dgrim.reaper.min=${GRIM_MIN} -Dgrim.reaper.max=${GRIM_MAX}
             mvn -B surefire:test -DsurefireArgLine="-Xmx384m" -Dtest=ReaperCassandraIT -Dgrim.reaper.min=${GRIM_MIN} -Dgrim.reaper.max=${GRIM_MAX}
         fi
         ;;
