@@ -42,7 +42,6 @@ import org.slf4j.LoggerFactory;
 public class ReaperPostgresIT {
 
   private static final Logger LOG = LoggerFactory.getLogger(ReaperPostgresIT.class);
-  private static ReaperTestJettyRunner runner;
   private static final List<ReaperTestJettyRunner> RUNNER_INSTANCES = new CopyOnWriteArrayList<>();
   private static final String POSTGRES_CONFIG_FILE = "cassandra-reaper-postgres-at.yaml";
   private static final Random RAND = new Random(System.nanoTime());
