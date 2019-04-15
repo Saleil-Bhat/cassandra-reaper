@@ -28,6 +28,7 @@ import io.cassandrareaper.resources.view.RepairRunStatus;
 import io.cassandrareaper.resources.view.RepairScheduleStatus;
 import io.cassandrareaper.service.RepairRunService;
 import io.cassandrareaper.storage.CassandraStorage;
+import io.cassandrareaper.storage.PostgresStorage;
 
 import java.util.Arrays;
 import java.util.EnumSet;
@@ -91,13 +92,13 @@ public final class BasicSteps {
   private TestContext testContext;
 
   public static synchronized void addReaperRunner(ReaperTestJettyRunner runner) {
-
-    String csCls = CassandraStorage.class.getName();
     if (!CLIENTS.isEmpty()) {
-      Preconditions.checkState(csCls.equals(runner.runnerInstance.getContextStorageClassname()));
-
+      Preconditions.checkState(isInstanceOfDistributedStorage(runner.runnerInstance.getContextStorageClassname()));
       RUNNERS.stream()
-          .forEach(r -> Preconditions.checkState(csCls.equals(runner.runnerInstance.getContextStorageClassname())));
+          .forEach(r ->
+              Preconditions.checkState(
+                  isInstanceOfDistributedStorage(runner.runnerInstance.getContextStorageClassname())
+              ));
     }
     RUNNERS.add(runner);
     CLIENTS.add(runner.getClient());
@@ -1768,5 +1769,11 @@ public final class BasicSteps {
             "INSERT INTO " + keyspaceName + "." + tableName + "(id, value) VALUES(" + i + ",'" + i + "')");
       }
     }
+  }
+
+  private static boolean isInstanceOfDistributedStorage(String storageClassname) {
+    String csCls = CassandraStorage.class.getName();
+    String pgCls = PostgresStorage.class.getName();
+    return csCls.equals(storageClassname) || pgCls.equals(storageClassname);
   }
 }

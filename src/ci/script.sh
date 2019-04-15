@@ -49,8 +49,8 @@ case "${TEST_TYPE}" in
             mvn -B surefire:test -DsurefireArgLine="-Xmx256m"  -Dtest=ReaperIT
             mvn -B surefire:test -DsurefireArgLine="-Xmx256m"  -Dtest=ReaperH2IT
         else
-            mvn -B surefire:test -DsurefireArgLine="-Xmx384m" -Dtest=ReaperCassandraIT -Dgrim.reaper.min=${GRIM_MIN} -Dgrim.reaper.max=${GRIM_MAX}
             mvn -B surefire:test -DsurefireArgLine="-Xmx384m" -Dtest=ReaperPostgresIT -Dgrim.reaper.min=${GRIM_MIN} -Dgrim.reaper.max=${GRIM_MAX}
+            mvn -B surefire:test -DsurefireArgLine="-Xmx384m" -Dtest=ReaperCassandraIT -Dgrim.reaper.min=${GRIM_MIN} -Dgrim.reaper.max=${GRIM_MAX}
         fi
         ;;
     "upgrade")
