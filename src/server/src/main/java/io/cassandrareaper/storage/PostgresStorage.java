@@ -168,17 +168,27 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
       String properties = new ObjectMapper().writeValueAsString(newCluster.getProperties());
       Preconditions.checkState(newCluster.getPartitioner().isPresent(),
           "Cannot insert cluster with no partitioner.");
-      int rowsAdded
-          = getPostgresStorage(h)
-              .insertCluster(
-                  newCluster.getName(),
-                  newCluster.getPartitioner().get(),
-                  newCluster.getSeedHosts(),
-                  properties);
-      if (rowsAdded < 1) {
+      try {
+        int rowsAdded
+            = getPostgresStorage(h)
+            .insertCluster(
+                newCluster.getName(),
+                newCluster.getPartitioner().get(),
+                newCluster.getSeedHosts(),
+                properties);
+        if (rowsAdded < 1) {
+          LOG.warn("failed inserting cluster with name: {}", newCluster.getName());
+        } else {
+          result = newCluster; // no created id, as cluster name used for primary key
+        }
+
+      } catch (UnableToExecuteStatementException e) {
+        if (JdbiExceptionUtil.isDuplicateKeyError(e)) {
+          LOG.warn("cluster with name: {} already exists; updating instead", newCluster.getName());
+          return updateCluster(newCluster);
+        }
         LOG.warn("failed inserting cluster with name: {}", newCluster.getName());
-      } else {
-        result = newCluster; // no created id, as cluster name used for primary key
+        return false;
       }
     } catch (JsonProcessingException e) {
       throw new ReaperException(e);
