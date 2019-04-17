@@ -173,19 +173,26 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
     Cluster result = null;
     try (Handle h = jdbi.open()) {
       String properties = new ObjectMapper().writeValueAsString(cluster.getProperties());
+      try {
+        int rowsAdded = getPostgresStorage(h).insertCluster(
+            cluster.getName(),
+            cluster.getPartitioner().get(),
+            cluster.getSeedHosts(),
+            properties,
+            cluster.getState().name(),
+            java.sql.Date.valueOf(cluster.getLastContact()));
 
-      int rowsAdded = getPostgresStorage(h).insertCluster(
-          cluster.getName(),
-          cluster.getPartitioner().get(),
-          cluster.getSeedHosts(),
-          properties,
-          cluster.getState().name(),
-          java.sql.Date.valueOf(cluster.getLastContact()));
-
-      if (rowsAdded < 1) {
+        if (rowsAdded < 1) {
+          LOG.warn("failed inserting cluster with name: {}", cluster.getName());
+        } else {
+          result = cluster; // no created id, as cluster name used for primary key
+        }
+      } catch (UnableToExecuteStatementException e) {
+        if (JdbiExceptionUtil.isDuplicateKeyError(e)) {
+          LOG.warn("cluster with name: {} already exists; updating instead", cluster.getName());
+          return updateCluster(cluster);
+        }
         LOG.warn("failed inserting cluster with name: {}", cluster.getName());
-      } else {
-        result = cluster; // no created id, as cluster name used for primary key
       }
     } catch (JsonProcessingException e) {
       throw new IllegalStateException(e);
