@@ -73,7 +73,7 @@ public class PostgresStorageTest {
     System.setOut(tmp);
 
     String cwd = Paths.get("").toAbsolutePath().toString();
-    String path = cwd + "/../src/test/resources/db/postgres/V12_0_0__multi_instance.sql";
+    String path = cwd + "/../src/test/resources/db/postgres/V15_0_0__multi_instance.sql";
     ScriptRunner scriptExecutor = new ScriptRunner(conn, false, true);
     Reader reader = new BufferedReader(new FileReader(path));
     scriptExecutor.runScript(reader);
