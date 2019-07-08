@@ -43,6 +43,10 @@ jobs:
   fast_finish: true
   allow_failures:
   - env: TEST_TYPE=docker
+  - env: TEST_TYPE=ccm CASSANDRA_VERSION=github:apache/trunk
+  - env: TEST_TYPE=ccm CASSANDRA_VERSION=github:apache/trunk GRIM_MIN=1 GRIM_MAX=1
+  - env: TEST_TYPE=ccm CASSANDRA_VERSION=github:apache/trunk GRIM_MIN=2 GRIM_MAX=2
+  - env: TEST_TYPE=ccm CASSANDRA_VERSION=github:apache/trunk GRIM_MIN=2 GRIM_MAX=4
   include:
     - stage: Integration Tests
       name: Memory, H2 and Postgresql reaping Cassandra 1.2.19
