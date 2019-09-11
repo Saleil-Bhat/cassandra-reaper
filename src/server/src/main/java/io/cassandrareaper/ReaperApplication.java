@@ -437,16 +437,6 @@ public final class ReaperApplication extends Application<ReaperApplicationConfig
       storage = new MemoryStorage();
     } else if ("cassandra".equalsIgnoreCase(config.getStorageType())) {
       storage = new CassandraStorage(context.reaperInstanceId, config, environment);
-    } else if ("multireaper-postgres".equalsIgnoreCase(config.getStorageType())) {
-      // create DBI instance
-      final DBIFactory factory = new DBIFactory();
-      if (StringUtils.isEmpty(config.getDataSourceFactory().getDriverClass())) {
-        config.getDataSourceFactory().setDriverClass("org.postgresql.Driver");
-      }
-      // instantiate store
-      storage = new MultiReaperPostgresStorage(
-          factory.build(environment, config.getDataSourceFactory(), "postgresql"));
-      initDatabase(config);
     } else if ("postgres".equalsIgnoreCase(config.getStorageType())
         || "h2".equalsIgnoreCase(config.getStorageType())
         || "database".equalsIgnoreCase(config.getStorageType())) {
