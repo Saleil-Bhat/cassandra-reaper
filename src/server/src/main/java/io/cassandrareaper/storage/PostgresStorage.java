@@ -85,15 +85,18 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
   protected final DBI jdbi;
   private final Duration leaderTimeout;
   private final Duration reaperTimeout;
+  private final UUID reaperInstanceId;
 
 
-  public PostgresStorage(DBI jdbi) {
+  public PostgresStorage(UUID reaperInstanceId, DBI jdbi) {
+    this.reaperInstanceId = reaperInstanceId;
     this.jdbi = jdbi;
     leaderTimeout = Duration.ofMinutes(DEFAULT_LEADER_TIMEOUT_MIN);
     reaperTimeout = Duration.ofMinutes(DEFAULT_REAPER_TIMEOUT_MIN);
   }
 
-  public PostgresStorage(DBI jdbi, int leaderTimeoutInMinutes, int reaperTimeoutInMinutes) {
+  public PostgresStorage(UUID reaperInstanceId, DBI jdbi, int leaderTimeoutInMinutes, int reaperTimeoutInMinutes) {
+    this.reaperInstanceId = reaperInstanceId;
     this.jdbi = jdbi;
     leaderTimeout = Duration.ofMinutes(leaderTimeoutInMinutes);
     reaperTimeout = Duration.ofMinutes(reaperTimeoutInMinutes);
@@ -671,7 +674,7 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
         try {
           int rowsInserted = getPostgresStorage(h).insertLeaderEntry(
               leaderId,
-              AppContext.REAPER_INSTANCE_ID,
+              reaperInstanceId,
               AppContext.REAPER_INSTANCE_ADDRESS
           );
           if (rowsInserted == 1) {  // insert should modify exactly 1 row
@@ -682,7 +685,7 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
             // if it's a duplicate key error, then try to update it
             int rowsUpdated = getPostgresStorage(h).updateLeaderEntry(
                 leaderId,
-                AppContext.REAPER_INSTANCE_ID,
+                reaperInstanceId,
                 AppContext.REAPER_INSTANCE_ADDRESS,
                 getExpirationTime(leaderTimeout)
             );
@@ -705,7 +708,7 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
       try (Handle h = jdbi.open()) {
         int rowsUpdated = getPostgresStorage(h).renewLead(
             leaderId,
-            AppContext.REAPER_INSTANCE_ID,
+            reaperInstanceId,
             AppContext.REAPER_INSTANCE_ADDRESS
         );
 
@@ -739,23 +742,13 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
       try (Handle h = jdbi.open()) {
         int rowsDeleted = getPostgresStorage(h).releaseLead(
             leaderId,
-            AppContext.REAPER_INSTANCE_ID
+            reaperInstanceId
         );
         if (rowsDeleted == 1) {
           LOG.debug("Released lead on segment {}", leaderId);
         } else {
           LOG.error("Could not release lead on segment {}", leaderId);
         }
-      }
-    }
-  }
-
-  @Override
-  public void forceReleaseLead(UUID leaderId) {
-    if (null != jdbi) {
-      try (Handle h = jdbi.open()) {
-        getPostgresStorage(h).forceReleaseLead(leaderId);
-        LOG.debug("Force released lead on segment {}", leaderId);
       }
     }
   }
@@ -850,17 +843,17 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {
         int rowsUpdated = getPostgresStorage(h).updateHeartbeat(
-            AppContext.REAPER_INSTANCE_ID,
+            reaperInstanceId,
             AppContext.REAPER_INSTANCE_ADDRESS
         );
         if (rowsUpdated == 0) {
-          LOG.debug("Creating new entry for reaper {}", AppContext.REAPER_INSTANCE_ID);
+          LOG.debug("Creating new entry for reaper {}", reaperInstanceId);
           int rowsInserted = getPostgresStorage(h).insertHeartbeat(
-              AppContext.REAPER_INSTANCE_ID,
+              reaperInstanceId,
               AppContext.REAPER_INSTANCE_ADDRESS
           );
           if (rowsInserted != 1) {
-            LOG.error("Failed to create entry for reaper {}", AppContext.REAPER_INSTANCE_ID);
+            LOG.error("Failed to create entry for reaper {}", reaperInstanceId);
           }
         }
       }
