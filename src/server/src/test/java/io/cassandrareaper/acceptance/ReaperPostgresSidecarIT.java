@@ -17,6 +17,9 @@
 
 package io.cassandrareaper.acceptance;
 
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import cucumber.api.CucumberOptions;
 import cucumber.api.junit.Cucumber;
@@ -25,11 +28,6 @@ import org.junit.BeforeClass;
 import org.junit.runner.RunWith;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.List;
-import java.util.Optional;
-import java.util.Random;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 @RunWith(Cucumber.class)
 @CucumberOptions(
@@ -43,12 +41,10 @@ public class ReaperPostgresSidecarIT {
 
   private static final Logger LOG = LoggerFactory.getLogger(ReaperPostgresSidecarIT.class);
   private static final List<ReaperTestJettyRunner> RUNNER_INSTANCES = new CopyOnWriteArrayList<>();
-  private static final String[] POSTGRES_CONFIG_FILE
-      = {
+  private static final String[] POSTGRES_CONFIG_FILE = {
       "reaper-postgres-sidecar1-at.yaml",
       "reaper-postgres-sidecar2-at.yaml",
   };
-
 
   protected ReaperPostgresSidecarIT() {}
 

@@ -17,12 +17,9 @@
 
 package io.cassandrareaper.storage;
 
-import com.google.common.annotations.VisibleForTesting;
+import io.cassandrareaper.AppContext;
 import io.cassandrareaper.core.Cluster;
 import io.cassandrareaper.core.DiagEventSubscription;
-import io.cassandrareaper.AppContext;
-import io.cassandrareaper.ReaperException;
-import io.cassandrareaper.core.Cluster;
 import io.cassandrareaper.core.GenericMetric;
 import io.cassandrareaper.core.NodeMetrics;
 import io.cassandrareaper.core.RepairRun;
@@ -63,6 +60,7 @@ import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
@@ -677,8 +675,42 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
 
   @Override
   public boolean takeLead(UUID leaderId, int ttl) {
-    Duration lead_timeout = Duration.ofSeconds(ttl);
-    return takeLead(leaderId, lead_timeout);
+    Duration leadTimeout = Duration.ofSeconds(ttl);
+    return takeLead(leaderId, leadTimeout);
+  }
+
+  private boolean takeLead(UUID leaderId, Duration ttl) {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        try {
+          int rowsInserted = getPostgresStorage(h).insertLeaderEntry(
+              leaderId,
+              reaperInstanceId,
+              AppContext.REAPER_INSTANCE_ADDRESS
+          );
+          if (rowsInserted == 1) {  // insert should modify exactly 1 row
+            return true;
+          }
+        } catch (UnableToExecuteStatementException e) {
+          if (JdbiExceptionUtil.isDuplicateKeyError(e)) {
+            // if it's a duplicate key error, then try to update it
+            int rowsUpdated = getPostgresStorage(h).updateLeaderEntry(
+                leaderId,
+                reaperInstanceId,
+                AppContext.REAPER_INSTANCE_ADDRESS,
+                getExpirationTime(ttl)
+            );
+            if (rowsUpdated == 1) {  // if row updated, took ownership from an expired leader
+              LOG.debug("Took lead from expired entry for segment {}", leaderId);
+              return true;
+            }
+          }
+          return false;
+        }
+      }
+    }
+    LOG.warn("Unknown error occurred while taking lead on segment {}", leaderId);
+    return false;
   }
 
   @Override
@@ -912,40 +944,6 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
     return "";
   }
 
-  private boolean takeLead(UUID leaderId, Duration ttl) {
-    if (null != jdbi) {
-      try (Handle h = jdbi.open()) {
-        try {
-          int rowsInserted = getPostgresStorage(h).insertLeaderEntry(
-              leaderId,
-              reaperInstanceId,
-              AppContext.REAPER_INSTANCE_ADDRESS
-          );
-          if (rowsInserted == 1) {  // insert should modify exactly 1 row
-            return true;
-          }
-        } catch (UnableToExecuteStatementException e) {
-          if (JdbiExceptionUtil.isDuplicateKeyError(e)) {
-            // if it's a duplicate key error, then try to update it
-            int rowsUpdated = getPostgresStorage(h).updateLeaderEntry(
-                leaderId,
-                reaperInstanceId,
-                AppContext.REAPER_INSTANCE_ADDRESS,
-                getExpirationTime(ttl)
-            );
-            if (rowsUpdated == 1) {  // if row updated, took ownership from an expired leader
-              LOG.debug("Took lead from expired entry for segment {}", leaderId);
-              return true;
-            }
-          }
-          return false;
-        }
-      }
-    }
-    LOG.warn("Unknown error occurred while taking lead on segment {}", leaderId);
-    return false;
-  }
-
   private void beat() {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {
@@ -986,7 +984,7 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
     }
   }
 
-  private Instant getExpirationTime(Duration timeout) {
+  private static Instant getExpirationTime(Duration timeout) {
     return Instant.now().minus(timeout);
   }
 

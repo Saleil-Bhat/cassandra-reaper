@@ -30,8 +30,8 @@ import io.cassandrareaper.resources.view.RepairRunStatus;
 import io.cassandrareaper.resources.view.RepairScheduleStatus;
 import io.cassandrareaper.service.RepairRunService;
 import io.cassandrareaper.storage.CassandraStorage;
-import io.cassandrareaper.storage.postgresql.DiagEventSubscriptionMapper;
 import io.cassandrareaper.storage.PostgresStorage;
+import io.cassandrareaper.storage.postgresql.DiagEventSubscriptionMapper;
 
 import java.util.Arrays;
 import java.util.EnumSet;
