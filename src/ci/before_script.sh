@@ -23,9 +23,10 @@ case "${TEST_TYPE}" in
         exit 1
         ;;
     "ccm")
-        if [ "x${GRIM_MIN}" = "x" ] ; then
-          psql -c 'create database reaper;' -U postgres
-        fi
+        psql -c 'create database reaper;' -U postgres
+        ;;
+    "sidecar")
+        psql -c 'create database reaper;' -U postgres
         ;;
     *)
         echo "Skipping, no actions for TEST_TYPE=${TEST_TYPE}."
