@@ -73,7 +73,7 @@ public class PostgresStorageTest {
     System.setOut(tmp);
 
     String cwd = Paths.get("").toAbsolutePath().toString();
-    String path = cwd + "/../src/test/resources/db/postgres/V15_0_0__multi_instance.sql";
+    String path = cwd + "/../src/test/resources/db/postgres/V17_0_0__multi_instance.sql";
     ScriptRunner scriptExecutor = new ScriptRunner(conn, false, true);
     Reader reader = new BufferedReader(new FileReader(path));
     scriptExecutor.runScript(reader);
@@ -84,7 +84,8 @@ public class PostgresStorageTest {
   @Test
   public void testTakeLead() {
     DBI dbi = new DBI(DB_URL);
-    PostgresStorage storage = new PostgresStorage(dbi);
+    UUID reaperInstanceId = UUID.randomUUID();
+    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -113,7 +114,8 @@ public class PostgresStorageTest {
   @Test
   public void testNoLeaders() {
     DBI dbi = new DBI(DB_URL);
-    PostgresStorage storage = new PostgresStorage(dbi);
+    UUID reaperInstanceId = UUID.randomUUID();
+    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -126,7 +128,8 @@ public class PostgresStorageTest {
   @Test
   public void testRenewLead() throws InterruptedException {
     DBI dbi = new DBI(DB_URL);
-    PostgresStorage storage = new PostgresStorage(dbi);
+    UUID reaperInstanceId = UUID.randomUUID();
+    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -154,7 +157,8 @@ public class PostgresStorageTest {
   @Test
   public void testReleaseLead() {
     DBI dbi = new DBI(DB_URL);
-    PostgresStorage storage = new PostgresStorage(dbi);
+    UUID reaperInstanceId = UUID.randomUUID();
+    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -185,42 +189,10 @@ public class PostgresStorageTest {
   }
 
   @Test
-  public void testForceReleaseLead() {
-    DBI dbi = new DBI(DB_URL);
-    PostgresStorage storage = new PostgresStorage(dbi);
-    Assertions.assertThat(storage.isStorageConnected()).isTrue();
-
-    Handle handle = dbi.open();
-    handle.execute("DELETE from leader");
-
-    UUID leaderIdForSelf = UUID.randomUUID();
-    UUID leaderIdForOther = UUID.randomUUID();
-
-    storage.takeLead(leaderIdForSelf);
-    storage.takeLead(leaderIdForOther);
-
-    List<UUID> fetchedLeaderIds = storage.getLeaders();
-    Assertions.assertThat(fetchedLeaderIds.size()).isEqualTo(2);
-
-    handle.createStatement("UPDATE leader SET reaper_instance_id = 0 WHERE leader_id = :id")
-        .bind("id", UuidUtil.toSequenceId(leaderIdForOther))
-        .execute();
-
-    // test that forceReleaseLead succeeds for entry where instance_id = self
-    storage.forceReleaseLead(leaderIdForSelf);
-    fetchedLeaderIds = storage.getLeaders();
-    Assertions.assertThat(fetchedLeaderIds.size()).isEqualTo(1);
-
-    // test that forceReleaseLead succeeds for entry where instance_id != self
-    storage.forceReleaseLead(leaderIdForOther);
-    fetchedLeaderIds = storage.getLeaders();
-    Assertions.assertThat(fetchedLeaderIds.size()).isEqualTo(0);
-  }
-
-  @Test
   public void testSaveHeartbeat() {
     DBI dbi = new DBI(DB_URL);
-    PostgresStorage storage = new PostgresStorage(dbi);
+    UUID reaperInstanceId = UUID.randomUUID();
+    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -234,7 +206,8 @@ public class PostgresStorageTest {
   @Test
   public void testNodeMetrics() {
     DBI dbi = new DBI(DB_URL);
-    PostgresStorage storage = new PostgresStorage(dbi);
+    UUID reaperInstanceId = UUID.randomUUID();
+    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -271,7 +244,8 @@ public class PostgresStorageTest {
   @Test
   public void testNodeMetricsByNode() {
     DBI dbi = new DBI(DB_URL);
-    PostgresStorage storage = new PostgresStorage(dbi);
+    UUID reaperInstanceId = UUID.randomUUID();
+    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -312,7 +286,8 @@ public class PostgresStorageTest {
   public void testUpdateLeaderEntry() throws InterruptedException {
     System.out.println("Testing leader timeout (this will take a minute)...");
     DBI dbi = new DBI(DB_URL);
-    PostgresStorage storage = new PostgresStorage(dbi, 1, 1);
+    UUID reaperInstanceId = UUID.randomUUID();
+    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi, 1, 1);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -328,7 +303,7 @@ public class PostgresStorageTest {
     Assertions.assertThat(result).isFalse();
 
     int rowsUpdated = handle.createStatement(IStoragePostgreSql.SQL_UPDATE_LEAD)
-        .bind("reaperInstanceId", UuidUtil.toSequenceId(AppContext.REAPER_INSTANCE_ID))
+        .bind("reaperInstanceId", UuidUtil.toSequenceId(reaperInstanceId))
         .bind("reaperInstanceHost", AppContext.REAPER_INSTANCE_ADDRESS)
         .bind("leaderId", UuidUtil.toSequenceId(leaderId))
         .bind("expirationTime", Instant.now().minus(Duration.ofSeconds(60)))
@@ -339,7 +314,7 @@ public class PostgresStorageTest {
     TimeUnit.SECONDS.sleep(60);
 
     rowsUpdated = handle.createStatement(IStoragePostgreSql.SQL_UPDATE_LEAD)
-        .bind("reaperInstanceId", UuidUtil.toSequenceId(AppContext.REAPER_INSTANCE_ID))
+        .bind("reaperInstanceId", UuidUtil.toSequenceId(reaperInstanceId))
         .bind("reaperInstanceHost", AppContext.REAPER_INSTANCE_ADDRESS)
         .bind("leaderId", UuidUtil.toSequenceId(leaderId))
         .bind("expirationTime", Instant.now().minus(Duration.ofSeconds(60)))
@@ -352,7 +327,8 @@ public class PostgresStorageTest {
   public void testDeleteOldNodeMetrics() throws InterruptedException {
     System.out.println("Testing metrics timeout (this will take a few minutes)...");
     DBI dbi = new DBI(DB_URL);
-    PostgresStorage storage = new PostgresStorage(dbi, 1, 1);
+    UUID reaperInstanceId = UUID.randomUUID();
+    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi, 1, 1);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -398,7 +374,8 @@ public class PostgresStorageTest {
   @Test
   public void testManualDeleteNodeMetrics() {
     DBI dbi = new DBI(DB_URL);
-    PostgresStorage storage = new PostgresStorage(dbi);
+    UUID reaperInstanceId = UUID.randomUUID();
+    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
