@@ -17,11 +17,13 @@
 
 package io.cassandrareaper.storage;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.cassandrareaper.core.Cluster;
 import io.cassandrareaper.core.DiagEventSubscription;
 import io.cassandrareaper.AppContext;
 import io.cassandrareaper.ReaperException;
 import io.cassandrareaper.core.Cluster;
+import io.cassandrareaper.core.GenericMetric;
 import io.cassandrareaper.core.NodeMetrics;
 import io.cassandrareaper.core.RepairRun;
 import io.cassandrareaper.core.RepairSchedule;
@@ -668,38 +670,15 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
     }
   }
 
+  @Override
   public boolean takeLead(UUID leaderId) {
-    if (null != jdbi) {
-      try (Handle h = jdbi.open()) {
-        try {
-          int rowsInserted = getPostgresStorage(h).insertLeaderEntry(
-              leaderId,
-              reaperInstanceId,
-              AppContext.REAPER_INSTANCE_ADDRESS
-          );
-          if (rowsInserted == 1) {  // insert should modify exactly 1 row
-            return true;
-          }
-        } catch (UnableToExecuteStatementException e) {
-          if (JdbiExceptionUtil.isDuplicateKeyError(e)) {
-            // if it's a duplicate key error, then try to update it
-            int rowsUpdated = getPostgresStorage(h).updateLeaderEntry(
-                leaderId,
-                reaperInstanceId,
-                AppContext.REAPER_INSTANCE_ADDRESS,
-                getExpirationTime(leaderTimeout)
-            );
-            if (rowsUpdated == 1) {  // if row updated, took ownership from an expired leader
-              LOG.debug("Took lead from expired entry for segment {}", leaderId);
-              return true;
-            }
-          }
-          return false;
-        }
-      }
-    }
-    LOG.warn("Unknown error occurred while taking lead on segment {}", leaderId);
-    return false;
+    return takeLead(leaderId, leaderTimeout);
+  }
+
+  @Override
+  public boolean takeLead(UUID leaderId, int ttl) {
+    Duration lead_timeout = Duration.ofSeconds(ttl);
+    return takeLead(leaderId, lead_timeout);
   }
 
   @Override
@@ -720,6 +699,11 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
       }
     }
     return false;
+  }
+
+  @Override
+  public boolean renewLead(UUID leaderId, int ttl) {
+    return renewLead(leaderId);
   }
 
   @Override
@@ -839,6 +823,129 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
     }
   }
 
+  @Override
+  public Optional<RepairSegment> getNextFreeSegmentForRanges(
+      UUID runId,
+      Optional<RingRange> parallelRange,
+      List<RingRange> ranges) {
+    List<RepairSegment> segments
+        = Lists.<RepairSegment>newArrayList(getRepairSegmentsForRun(runId));
+    Collections.shuffle(segments);
+
+    for (RepairSegment seg : segments) {
+      if (seg.getState().equals(RepairSegment.State.NOT_STARTED) && withinRange(seg, parallelRange)) {
+        for (RingRange range : ranges) {
+          if (segmentIsWithinRange(seg, range)) {
+            LOG.debug(
+                "Segment [{}, {}] is within range [{}, {}]",
+                seg.getStartToken(),
+                seg.getEndToken(),
+                range.getStart(),
+                range.getEnd());
+            return Optional.of(seg);
+          }
+        }
+      }
+    }
+    return Optional.empty();
+  }
+
+  @Override
+  public void storeMetric(GenericMetric metric) {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        getPostgresStorage(h).storeMetric(
+            metric.getClusterName(),
+            metric.getMetricDomain(),
+            metric.getMetricType(),
+            metric.getHost(),
+            metric.getMetricScope(),
+            metric.getMetricName(),
+            metric.getMetricAttribute(),
+            metric.getValue()
+        );
+      }
+    }
+  }
+
+  @Override
+  public List<GenericMetric> getMetrics(
+      String clusterName,
+      Optional<String> host,
+      String metricDomain,
+      String metricType,
+      long since) {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        if (host.isPresent()) {
+          return new ArrayList<>(
+              getPostgresStorage(h).getMetricsForHost(
+                clusterName,
+                host.get(),
+                metricDomain,
+                metricType,
+                Instant.ofEpochMilli(since)
+              )
+          );
+        } else {
+          return new ArrayList<>(
+              getPostgresStorage(h).getMetricsForCluster(
+                  clusterName,
+                  metricDomain,
+                  metricType,
+                  Instant.ofEpochMilli(since)
+              )
+          );
+        }
+      }
+    }
+    return new ArrayList<>();
+  }
+
+  @Override
+  public void storeOperations(String clusterName, OpType operationType, String host, String operationsJson) {
+
+  }
+
+  @Override
+  public String listOperations(String clusterName, OpType operationType, String host) {
+    return "";
+  }
+
+  private boolean takeLead(UUID leaderId, Duration ttl) {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        try {
+          int rowsInserted = getPostgresStorage(h).insertLeaderEntry(
+              leaderId,
+              reaperInstanceId,
+              AppContext.REAPER_INSTANCE_ADDRESS
+          );
+          if (rowsInserted == 1) {  // insert should modify exactly 1 row
+            return true;
+          }
+        } catch (UnableToExecuteStatementException e) {
+          if (JdbiExceptionUtil.isDuplicateKeyError(e)) {
+            // if it's a duplicate key error, then try to update it
+            int rowsUpdated = getPostgresStorage(h).updateLeaderEntry(
+                leaderId,
+                reaperInstanceId,
+                AppContext.REAPER_INSTANCE_ADDRESS,
+                getExpirationTime(ttl)
+            );
+            if (rowsUpdated == 1) {  // if row updated, took ownership from an expired leader
+              LOG.debug("Took lead from expired entry for segment {}", leaderId);
+              return true;
+            }
+          }
+          return false;
+        }
+      }
+    }
+    LOG.warn("Unknown error occurred while taking lead on segment {}", leaderId);
+    return false;
+  }
+
   private void beat() {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {
@@ -868,7 +975,8 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
     }
   }
 
-  public void deleteOldMetrics() {
+  @VisibleForTesting
+  void deleteOldMetrics() {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {
         long expirationMinute = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis())
@@ -882,4 +990,11 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
     return Instant.now().minus(timeout);
   }
 
+  private static boolean segmentIsWithinRange(RepairSegment segment, RingRange range) {
+    return range.encloses(new RingRange(segment.getStartToken(), segment.getEndToken()));
+  }
+
+  private static boolean withinRange(RepairSegment segment, Optional<RingRange> range) {
+    return !range.isPresent() || segmentIsWithinRange(segment, range.get());
+  }
 }

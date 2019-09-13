@@ -450,7 +450,10 @@ public final class ReaperApplication extends Application<ReaperApplicationConfig
         config.getDataSourceFactory().setDriverClass("org.h2.Driver");
       }
       // instantiate store
-      storage = new PostgresStorage(factory.build(environment, config.getDataSourceFactory(), "postgresql"));
+      storage = new PostgresStorage(
+          context.reaperInstanceId,
+          factory.build(environment, config.getDataSourceFactory(), "postgresql")
+      );
       initDatabase(config);
     } else {
       LOG.error("invalid storageType: {}", config.getStorageType());

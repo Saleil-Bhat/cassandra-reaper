@@ -19,6 +19,7 @@ package io.cassandrareaper.storage.postgresql;
 
 import io.cassandrareaper.core.Cluster;
 import io.cassandrareaper.core.DiagEventSubscription;
+import io.cassandrareaper.core.GenericMetric;
 import io.cassandrareaper.core.NodeMetrics;
 import io.cassandrareaper.core.RepairRun;
 import io.cassandrareaper.core.RepairSchedule;
@@ -331,9 +332,29 @@ public interface IStoragePostgreSql {
       + " time_partition = :timePartition AND run_id = :runId AND node = :node";
 
   String SQL_DELETE_OLD_METRICS = "DELETE FROM node_metrics_v1"
-      + " WHERE "
-      + "time_partition < :expirationMinute";
+      + " WHERE"
+      + " time_partition < :expirationMinute";
 
+  // sidecar-mode metrics
+  //
+  String SQL_STORE_METRICS = "INSERT INTO node_metrics_v2"
+          + " (cluster, metric_domain, metric_type, host, metric_scope, metric_name, metric_attribute, value, ts)"
+          + " VALUES"
+          + " (:cluster, :metricDomain, :metricType, :host, :metricScope, :metricName, :metricAttribute,"
+          + " :value, now())";
+
+  String SQL_GET_METRICS_FOR_HOST = "SELECT * FROM node_metrics_v2"
+      + " WHERE"
+      + " cluster = :cluster AND host = :host AND metric_domain = :metricDomain AND metric_type = :metricType"
+      + " AND ts >= :since";
+
+  String SQL_GET_METRICS_FOR_CLUSTER = "SELECT * FROM node_metrics_v2"
+      + " WHERE"
+      + " cluster = :cluster AND metric_domain = :metricDomain AND metric_type = :metricType"
+      + " AND ts >= :since";
+
+  String SQL_INSERT_OPERATIONS = "INSERT INTO node_operations (cluster, type, host, data, ts)"
+      + " VALUES (:cluster, :type, :host, :data, :timestamp)";
 
   static String[] parseStringArray(Object obj) {
     String[] values = null;
@@ -686,5 +707,45 @@ public interface IStoragePostgreSql {
   @SqlUpdate(SQL_DELETE_OLD_METRICS)
   int deleteOldMetrics(
       @Bind("expirationMinute") long expirationMinute
+  );
+
+  @SqlUpdate(SQL_STORE_METRICS)
+  int storeMetric(
+      @Bind("cluster") String cluster,
+      @Bind("metricDomain") String metricDomain,
+      @Bind("metricType") String metricType,
+      @Bind("host") String host,
+      @Bind("metricScope") String metricScope,
+      @Bind("metricName") String metricName,
+      @Bind("metricAttribute") String metricAttribute,
+      @Bind("value") double value
+  );
+
+  @SqlQuery(SQL_GET_METRICS_FOR_HOST)
+  @Mapper(GenericMetricMapper.class)
+  Collection<GenericMetric> getMetricsForHost(
+      @Bind("cluster") String cluster,
+      @Bind("host") String host,
+      @Bind("metricDomain") String metricDomain,
+      @Bind("metricType") String metricType,
+      @Bind("since") Instant since
+  );
+
+  @SqlQuery(SQL_GET_METRICS_FOR_CLUSTER)
+  @Mapper(GenericMetricMapper.class)
+  Collection<GenericMetric> getMetricsForCluster(
+      @Bind("cluster") String cluster,
+      @Bind("metricDomain") String metricDomain,
+      @Bind("metricType") String metricType,
+      @Bind("since") Instant since
+  );
+
+  @SqlUpdate(SQL_INSERT_OPERATIONS)
+  int insertOperations(
+      @Bind("cluster") String cluster,
+      @Bind("type") String metricDomain,
+      @Bind("host") String host,
+      @Bind("data") String data,
+      @Bind("timestamp") Instant timestamp
   );
 }
