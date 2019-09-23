@@ -354,7 +354,13 @@ public interface IStoragePostgreSql {
       + " AND ts >= :since";
 
   String SQL_INSERT_OPERATIONS = "INSERT INTO node_operations (cluster, type, host, data, ts)"
-      + " VALUES (:cluster, :type, :host, :data, :timestamp)";
+      + " VALUES (:cluster, :type, :host, :data, now())";
+
+  String SQL_LIST_OPERATIONS = "SELECT data FROM node_operations"
+          + " WHERE"
+          + " cluster = :cluster AND type = :operationType AND host = :host"
+          + " ORDER BY ts DESC LIMIT 1";
+
 
   static String[] parseStringArray(Object obj) {
     String[] values = null;
@@ -743,9 +749,15 @@ public interface IStoragePostgreSql {
   @SqlUpdate(SQL_INSERT_OPERATIONS)
   int insertOperations(
       @Bind("cluster") String cluster,
-      @Bind("type") String metricDomain,
+      @Bind("type") String operationType,
       @Bind("host") String host,
-      @Bind("data") String data,
-      @Bind("timestamp") Instant timestamp
+      @Bind("data") String data
+  );
+
+  @SqlQuery(SQL_LIST_OPERATIONS)
+  String listOperations(
+      @Bind("cluster") String cluster,
+      @Bind("operationType") String operationType,
+      @Bind("host") String host
   );
 }

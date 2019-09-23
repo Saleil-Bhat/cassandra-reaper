@@ -936,12 +936,23 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
 
   @Override
   public void storeOperations(String clusterName, OpType operationType, String host, String operationsJson) {
-
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        getPostgresStorage(h).insertOperations(clusterName, operationType.getName(), host, operationsJson);
+      }
+    }
   }
 
   @Override
   public String listOperations(String clusterName, OpType operationType, String host) {
-    return "";
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        String opString = getPostgresStorage(h).listOperations(clusterName, operationType.getName(), host);
+        return (opString != null) ? opString : "[]";
+      }
+    }
+    LOG.error("Failed retrieving node operations for cluster {}, node {}", clusterName, host);
+    return "[]";
   }
 
   private void beat() {

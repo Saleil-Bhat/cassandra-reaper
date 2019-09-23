@@ -278,6 +278,25 @@ public class PostgresStorageTest {
     Assertions.assertThat(fetchedNm2Opt.isPresent()).isFalse();
   }
 
+  @Test
+  public void testNodeOperations() {
+    DBI dbi = new DBI(DB_URL);
+    UUID reaperInstanceId = UUID.randomUUID();
+    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi);
+    Assertions.assertThat(storage.isStorageConnected()).isTrue();
+
+    Handle handle = dbi.open();
+    handle.execute("DELETE from node_operations");
+
+    storage.storeOperations("fake_cluster", OpType.OP_STREAMING, "fake_host", "data1");
+    String data = storage.listOperations("fake_cluster", OpType.OP_STREAMING, "fake_host");
+    Assertions.assertThat(data.equals("data1"));
+    storage.storeOperations("fake_cluster", OpType.OP_STREAMING, "fake_host", "data2");
+
+    data = storage.listOperations("fake_cluster", OpType.OP_STREAMING, "fake_host");
+    Assertions.assertThat(data.equals("data2"));
+  }
+
   /*
   The following tests rely on timeouts; will take a few minutes to complete
    */

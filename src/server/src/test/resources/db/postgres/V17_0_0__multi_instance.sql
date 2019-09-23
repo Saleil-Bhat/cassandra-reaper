@@ -1,6 +1,6 @@
 -- H2-compatible version of multi-instance reaper Postgres DDL
 -- CHANGES:
---    "node" TEXT  -->  "node" VARCHAR(255)  because H2 doesn't support index on TEXT
+--     TEXT  --> VARCHAR(255)  because H2 doesn't support index on TEXT
 
 CREATE TABLE IF NOT EXISTS "leader" (
   "leader_id" BIGINT PRIMARY KEY,
@@ -26,4 +26,15 @@ CREATE TABLE IF NOT EXISTS "node_metrics_v1" (
   "has_repair_running"      BOOLEAN,
   "active_anticompactions"  INT,
   PRIMARY KEY("run_id", "time_partition", "node")
+);
+
+--- Sidecar mode
+
+CREATE TABLE IF NOT EXISTS "node_operations" (
+    "cluster" VARCHAR(255),
+    "type" VARCHAR(255),
+    "host" VARCHAR(255),
+    "ts" TIMESTAMP WITH TIME ZONE,
+    "data" TEXT,
+    PRIMARY KEY ("cluster", "type", "host", "ts")
 );
