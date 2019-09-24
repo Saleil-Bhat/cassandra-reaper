@@ -40,12 +40,14 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import org.skife.jdbi.v2.TransactionIsolationLevel;
 import org.skife.jdbi.v2.sqlobject.Bind;
 import org.skife.jdbi.v2.sqlobject.BindBean;
 import org.skife.jdbi.v2.sqlobject.GetGeneratedKeys;
 import org.skife.jdbi.v2.sqlobject.SqlBatch;
 import org.skife.jdbi.v2.sqlobject.SqlQuery;
 import org.skife.jdbi.v2.sqlobject.SqlUpdate;
+import org.skife.jdbi.v2.sqlobject.Transaction;
 import org.skife.jdbi.v2.sqlobject.customizers.BatchChunkSize;
 import org.skife.jdbi.v2.sqlobject.customizers.Mapper;
 
@@ -337,21 +339,48 @@ public interface IStoragePostgreSql {
 
   // sidecar-mode metrics
   //
-  String SQL_STORE_METRICS = "INSERT INTO node_metrics_v2"
-          + " (cluster, metric_domain, metric_type, host, metric_scope, metric_name, metric_attribute, value, ts)"
+  String SQL_ADD_SOURCE_NODE = "INSERT INTO node_metrics_v2_source_nodes (cluster, host)"
+          + " VALUES (:cluster, :host)"
+          + "ON CONFLICT DO NOTHING";
+
+  String SQL_ADD_METRIC_TYPE = "INSERT INTO node_metrics_v2_metric_types"
+          + " (metric_domain, metric_type, metric_scope, metric_name, metric_attribute)"
           + " VALUES"
-          + " (:cluster, :metricDomain, :metricType, :host, :metricScope, :metricName, :metricAttribute,"
-          + " :value, now())";
+          + " (:metricDomain, :metricType, :metricScope, :metricName, :metricAttribute)"
+          + " ON CONFLICT DO NOTHING";
 
-  String SQL_GET_METRICS_FOR_HOST = "SELECT * FROM node_metrics_v2"
-      + " WHERE"
-      + " cluster = :cluster AND host = :host AND metric_domain = :metricDomain AND metric_type = :metricType"
-      + " AND ts >= :since";
+  String SQL_GET_SOURCE_NODE_ID = "SELECT source_node_id FROM node_metrics_v2_source_nodes"
+          + " WHERE cluster = :cluster AND host = :host";
 
-  String SQL_GET_METRICS_FOR_CLUSTER = "SELECT * FROM node_metrics_v2"
-      + " WHERE"
-      + " cluster = :cluster AND metric_domain = :metricDomain AND metric_type = :metricType"
-      + " AND ts >= :since";
+  String SQL_GET_METRIC_TYPE_ID = "SELECT metric_type_id FROM node_metrics_v2_metric_types"
+          + " WHERE"
+          + " metric_domain = :metricDomain AND metric_type = :metricType AND metric_scope = :metricScope"
+          + " AND metric_name = :metricName AND metric_attribute = :metricAttribute";
+
+  String SQL_INSERT_METRIC = "INSERT INTO node_metrics_v2 (metric_type_id, source_node_id, ts, value)"
+          + " VALUES ("
+          + " (" + SQL_GET_METRIC_TYPE_ID + "),"
+          + " (" + SQL_GET_SOURCE_NODE_ID + "),"
+          + " now(),"
+          + " :value )";
+
+  String SQL_GET_METRICS_FOR_HOST = "SELECT cluster, host, metric_domain, metric_type, metric_scope, metric_name,"
+          + " metric_attribute, ts, value"
+          + " FROM node_metrics_v2"
+          + " NATURAL JOIN node_metrics_v2_metric_types"
+          + " NATURAL JOIN node_metrics_v2_source_nodes"
+          + " WHERE"
+          + " cluster = :cluster AND host = :host AND metric_domain = :metricDomain AND metric_type = :metricType"
+          + " AND ts >= :since";
+
+  String SQL_GET_METRICS_FOR_CLUSTER = "SELECT cluster, host, metric_domain, metric_type, metric_scope, metric_name,"
+          + " metric_attribute, ts, value"
+          + " FROM node_metrics_v2"
+          + " NATURAL JOIN node_metrics_v2_metric_types"
+          + " NATURAL JOIN node_metrics_v2_source_nodes"
+          + " WHERE"
+          + " cluster = :cluster AND metric_domain = :metricDomain AND metric_type = :metricType"
+          + " AND ts >= :since";
 
   String SQL_INSERT_OPERATIONS = "INSERT INTO node_operations (cluster, type, host, data, ts)"
       + " VALUES (:cluster, :type, :host, :data, now())";
@@ -715,17 +744,55 @@ public interface IStoragePostgreSql {
       @Bind("expirationMinute") long expirationMinute
   );
 
-  @SqlUpdate(SQL_STORE_METRICS)
-  int storeMetric(
+  @SqlUpdate(SQL_ADD_SOURCE_NODE)
+  int addMetricSourceNode(
       @Bind("cluster") String cluster,
+      @Bind("host") String host
+  );
+
+  @SqlUpdate(SQL_ADD_METRIC_TYPE)
+  int addMetricType(
       @Bind("metricDomain") String metricDomain,
       @Bind("metricType") String metricType,
+      @Bind("metricScope") String metricScope,
+      @Bind("metricName") String metricName,
+      @Bind("metricAttribute") String metricAttribute
+  );
+
+  @SqlUpdate(SQL_INSERT_METRIC)
+  int insertMetric(
+      @Bind("cluster") String cluster,
       @Bind("host") String host,
+      @Bind("metricDomain") String metricDomain,
+      @Bind("metricType") String metricType,
       @Bind("metricScope") String metricScope,
       @Bind("metricName") String metricName,
       @Bind("metricAttribute") String metricAttribute,
       @Bind("value") double value
   );
+
+  @SqlUpdate
+  @Transaction(TransactionIsolationLevel.SERIALIZABLE)
+  default int storeMetric(GenericMetric metric) {
+    addMetricSourceNode(metric.getClusterName(), metric.getHost());
+    addMetricType(
+        metric.getMetricDomain(),
+        metric.getMetricType(),
+        metric.getMetricScope(),
+        metric.getMetricName(),
+        metric.getMetricAttribute()
+    );
+    return insertMetric(
+        metric.getClusterName(),
+        metric.getHost(),
+        metric.getMetricDomain(),
+        metric.getMetricType(),
+        metric.getMetricScope(),
+        metric.getMetricName(),
+        metric.getMetricAttribute(),
+        metric.getValue()
+    );
+  }
 
   @SqlQuery(SQL_GET_METRICS_FOR_HOST)
   @Mapper(GenericMetricMapper.class)

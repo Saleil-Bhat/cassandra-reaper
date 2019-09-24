@@ -886,16 +886,7 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
   public void storeMetric(GenericMetric metric) {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {
-        getPostgresStorage(h).storeMetric(
-            metric.getClusterName(),
-            metric.getMetricDomain(),
-            metric.getMetricType(),
-            metric.getHost(),
-            metric.getMetricScope(),
-            metric.getMetricName(),
-            metric.getMetricAttribute(),
-            metric.getValue()
-        );
+        getPostgresStorage(h).storeMetric(metric);
       }
     }
   }

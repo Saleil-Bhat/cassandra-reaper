@@ -1,14 +1,26 @@
+CREATE TABLE IF NOT EXISTS "node_metrics_v2_source_nodes" (
+  "source_node_id" SERIAL PRIMARY KEY,
+  "cluster" TEXT,
+  "host" TEXT,
+  UNIQUE("cluster", "host")
+);
+
+CREATE TABLE IF NOT EXISTS "node_metrics_v2_metric_types" (
+  "metric_type_id" SERIAL PRIMARY KEY,
+  "metric_domain" TEXT,
+  "metric_type" TEXT,
+  "metric_scope" TEXT,
+  "metric_name" TEXT,
+  "metric_attribute" TEXT,
+  UNIQUE("metric_domain", "metric_type", "metric_scope", "metric_name", "metric_attribute")
+);
+
 CREATE TABLE IF NOT EXISTS "node_metrics_v2" (
-    "cluster" TEXT,
-    "metric_domain" TEXT,
-    "metric_type" TEXT,
-    "host" TEXT,
-    "metric_scope" TEXT,
-    "metric_name" TEXT,
-    "ts" TIMESTAMP WITH TIME ZONE,
-    "metric_attribute" TEXT,
-    "value" DOUBLE PRECISION,
-    PRIMARY KEY ("cluster", "host", "metric_domain", "metric_type", "metric_scope", "metric_name", "metric_attribute", "ts")
+  "metric_type_id" INT REFERENCES "node_metrics_v2_metric_types"("metric_type_id"),
+  "source_node_id" INT REFERENCES "node_metrics_v2_source_nodes"("source_node_id"),
+  "ts" TIMESTAMP WITH TIME ZONE,
+  "value" DOUBLE PRECISION,
+  PRIMARY KEY ("metric_type_id", "source_node_id", "ts")
 );
 
 CREATE TABLE IF NOT EXISTS "node_operations" (
