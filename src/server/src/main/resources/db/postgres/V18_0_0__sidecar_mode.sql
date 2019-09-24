@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS "node_metrics_v2_source_nodes" (
   "source_node_id" SERIAL PRIMARY KEY,
   "cluster" TEXT,
   "host" TEXT,
+  "last_updated" TIMESTAMP WITH TIME ZONE,
   UNIQUE("cluster", "host")
 );
 

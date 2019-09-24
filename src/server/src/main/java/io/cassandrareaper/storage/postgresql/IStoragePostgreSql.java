@@ -339,9 +339,9 @@ public interface IStoragePostgreSql {
 
   // sidecar-mode metrics
   //
-  String SQL_ADD_SOURCE_NODE = "INSERT INTO node_metrics_v2_source_nodes (cluster, host)"
-          + " VALUES (:cluster, :host)"
-          + "ON CONFLICT DO NOTHING";
+  String SQL_ADD_SOURCE_NODE = "INSERT INTO node_metrics_v2_source_nodes (cluster, host, last_updated)"
+          + " VALUES (:cluster, :host, now())"
+          + "ON CONFLICT (cluster, host) DO UPDATE SET last_updated = now()";
 
   String SQL_ADD_METRIC_TYPE = "INSERT INTO node_metrics_v2_metric_types"
           + " (metric_domain, metric_type, metric_scope, metric_name, metric_attribute)"
@@ -382,6 +382,10 @@ public interface IStoragePostgreSql {
           + " cluster = :cluster AND metric_domain = :metricDomain AND metric_type = :metricType"
           + " AND ts >= :since";
 
+  String SQL_PURGE_OLD_METRICS = "DELETE FROM node_metrics_v2 WHERE ts < :expirationTime";
+
+  String SQL_PURGE_OLD_SOURCE_NODES = "DELETE FROM node_metrics_v2_source_nodes WHERE last_updated < :expirationTime";
+
   String SQL_INSERT_OPERATIONS = "INSERT INTO node_operations (cluster, type, host, data, ts)"
       + " VALUES (:cluster, :type, :host, :data, now())";
 
@@ -390,6 +394,7 @@ public interface IStoragePostgreSql {
           + " cluster = :cluster AND type = :operationType AND host = :host"
           + " ORDER BY ts DESC LIMIT 1";
 
+  String SQL_PURGE_OLD_NODE_OPERATIONS = "DELETE from node_operations WHERE ts < :expirationTime";
 
   static String[] parseStringArray(Object obj) {
     String[] values = null;
@@ -813,6 +818,16 @@ public interface IStoragePostgreSql {
       @Bind("since") Instant since
   );
 
+  @SqlUpdate(SQL_PURGE_OLD_METRICS)
+  int purgeOldMetrics(
+      @Bind("expirationTime") Instant expirationTime
+  );
+
+  @SqlUpdate(SQL_PURGE_OLD_SOURCE_NODES)
+  int purgeOldSourceNodes(
+      @Bind("expirationTime") Instant expirationTime
+  );
+
   @SqlUpdate(SQL_INSERT_OPERATIONS)
   int insertOperations(
       @Bind("cluster") String cluster,
@@ -826,5 +841,10 @@ public interface IStoragePostgreSql {
       @Bind("cluster") String cluster,
       @Bind("operationType") String operationType,
       @Bind("host") String host
+  );
+
+  @SqlUpdate(SQL_PURGE_OLD_NODE_OPERATIONS)
+  int purgeOldNodeOperations(
+      @Bind("expirationTime") Instant expirationTime
   );
 }

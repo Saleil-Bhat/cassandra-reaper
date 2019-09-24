@@ -81,25 +81,41 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
   private static final Logger LOG = LoggerFactory.getLogger(PostgresStorage.class);
   private static final int DEFAULT_LEADER_TIMEOUT_MIN = 10;  // pulled value from Cassandra DDL
   private static final int DEFAULT_REAPER_TIMEOUT_MIN = 3;   // pulled value from Cassandra DDL
+  private static final int DEFAULT_METRICS_TIMEOUT_MIN = 14400; // 10 days in minutes
+  private static final int DEFAULT_NODE_OPERATIONS_TIMEOUT_MIN = 5;  // pulled value from Cassandra DDL
 
   protected final DBI jdbi;
   private final Duration leaderTimeout;
   private final Duration reaperTimeout;
+  private final Duration metricsTimeout;
+  private final Duration nodeOperationsTimeout;
   private final UUID reaperInstanceId;
 
 
   public PostgresStorage(UUID reaperInstanceId, DBI jdbi) {
-    this.reaperInstanceId = reaperInstanceId;
-    this.jdbi = jdbi;
-    leaderTimeout = Duration.ofMinutes(DEFAULT_LEADER_TIMEOUT_MIN);
-    reaperTimeout = Duration.ofMinutes(DEFAULT_REAPER_TIMEOUT_MIN);
+    this(
+      reaperInstanceId,
+      jdbi,
+      DEFAULT_LEADER_TIMEOUT_MIN,
+      DEFAULT_REAPER_TIMEOUT_MIN,
+      DEFAULT_METRICS_TIMEOUT_MIN,
+      DEFAULT_NODE_OPERATIONS_TIMEOUT_MIN
+    );
   }
 
-  public PostgresStorage(UUID reaperInstanceId, DBI jdbi, int leaderTimeoutInMinutes, int reaperTimeoutInMinutes) {
+  @VisibleForTesting
+  public PostgresStorage(UUID reaperInstanceId,
+                         DBI jdbi,
+                         int leaderTimeoutInMinutes,
+                         int reaperTimeoutInMinutes,
+                         int metricsTimeoutInMinutes,
+                         int nodeOperationsTimeoutInMinutes) {
     this.reaperInstanceId = reaperInstanceId;
     this.jdbi = jdbi;
     leaderTimeout = Duration.ofMinutes(leaderTimeoutInMinutes);
     reaperTimeout = Duration.ofMinutes(reaperTimeoutInMinutes);
+    metricsTimeout = Duration.ofMinutes(metricsTimeoutInMinutes);
+    nodeOperationsTimeout = Duration.ofMinutes(nodeOperationsTimeoutInMinutes);
   }
 
   protected static IStoragePostgreSql getPostgresStorage(Handle handle) {
@@ -925,6 +941,17 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
     return new ArrayList<>();
   }
 
+  public void purgeOldSidecarMetrics() {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        IStoragePostgreSql storage = getPostgresStorage(h);
+        Instant expirationTime = getExpirationTime(metricsTimeout);
+        storage.purgeOldMetrics(expirationTime);
+        storage.purgeOldNodeOperations(expirationTime);
+      }
+    }
+  }
+
   @Override
   public void storeOperations(String clusterName, OpType operationType, String host, String operationsJson) {
     if (null != jdbi) {
@@ -944,6 +971,14 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
     }
     LOG.error("Failed retrieving node operations for cluster {}, node {}", clusterName, host);
     return "[]";
+  }
+
+  public void purgeOldNodeOperations() {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        getPostgresStorage(h).purgeOldNodeOperations(getExpirationTime(nodeOperationsTimeout));
+      }
+    }
   }
 
   private void beat() {
