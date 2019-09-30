@@ -341,7 +341,7 @@ public interface IStoragePostgreSql {
   //
   String SQL_ADD_SOURCE_NODE = "INSERT INTO node_metrics_v2_source_nodes (cluster, host, last_updated)"
           + " VALUES (:cluster, :host, now())"
-          + "ON CONFLICT (cluster, host) DO UPDATE SET last_updated = now()";
+          + " ON CONFLICT (cluster, host) DO UPDATE SET last_updated = now()";
 
   String SQL_ADD_METRIC_TYPE = "INSERT INTO node_metrics_v2_metric_types"
           + " (metric_domain, metric_type, metric_scope, metric_name, metric_attribute)"

@@ -306,7 +306,7 @@ public class PostgresStorageTest {
     System.out.println("Testing leader timeout (this will take a minute)...");
     DBI dbi = new DBI(DB_URL);
     UUID reaperInstanceId = UUID.randomUUID();
-    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi, 1, 1);
+    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi, 1, 1, 1, 1);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
@@ -347,7 +347,7 @@ public class PostgresStorageTest {
     System.out.println("Testing metrics timeout (this will take a few minutes)...");
     DBI dbi = new DBI(DB_URL);
     UUID reaperInstanceId = UUID.randomUUID();
-    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi, 1, 1);
+    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi, 1, 1, 1, 1);
     Assertions.assertThat(storage.isStorageConnected()).isTrue();
 
     Handle handle = dbi.open();
