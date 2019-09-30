@@ -941,13 +941,13 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
     return new ArrayList<>();
   }
 
-  public void purgeOldSidecarMetrics() {
+  @Override
+  public void purgeMetrics() {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {
         IStoragePostgreSql storage = getPostgresStorage(h);
         Instant expirationTime = getExpirationTime(metricsTimeout);
         storage.purgeOldMetrics(expirationTime);
-        storage.purgeOldNodeOperations(expirationTime);
       }
     }
   }
@@ -973,10 +973,13 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
     return "[]";
   }
 
-  public void purgeOldNodeOperations() {
+  @Override
+  public void purgeNodeOperations() {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {
-        getPostgresStorage(h).purgeOldNodeOperations(getExpirationTime(nodeOperationsTimeout));
+        IStoragePostgreSql storage = getPostgresStorage(h);
+        Instant expirationTime = getExpirationTime(nodeOperationsTimeout);
+        storage.purgeOldNodeOperations(expirationTime);
       }
     }
   }

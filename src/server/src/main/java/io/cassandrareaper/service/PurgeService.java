@@ -21,6 +21,7 @@ import io.cassandrareaper.AppContext;
 import io.cassandrareaper.ReaperException;
 import io.cassandrareaper.core.Cluster;
 import io.cassandrareaper.core.RepairRun;
+import io.cassandrareaper.storage.IDistributedStorage;
 
 import java.util.Collection;
 import java.util.List;
@@ -73,6 +74,7 @@ public final class PurgeService {
         }
       }
     }
+    purgeMetrics();
     return purgedRuns;
   }
 
@@ -129,5 +131,12 @@ public final class PurgeService {
             });
 
     return purgedRuns.get();
+  }
+
+  private void purgeMetrics() {
+    if (context.config.isInSidecarMode()) {
+      ((IDistributedStorage) context.storage).purgeMetrics();
+      ((IDistributedStorage) context.storage).purgeNodeOperations();
+    }
   }
 }

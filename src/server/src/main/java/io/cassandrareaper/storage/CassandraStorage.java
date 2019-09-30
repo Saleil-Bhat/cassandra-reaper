@@ -1831,6 +1831,9 @@ public final class CassandraStorage implements IStorage, IDistributedStorage {
   }
 
   @Override
+  public void purgeMetrics() {}
+
+  @Override
   public void storeOperations(String clusterName, OpType operationType, String host, String operationsJson) {
     session.executeAsync(
         insertOperationsPrepStmt.bind(
@@ -1852,5 +1855,8 @@ public final class CassandraStorage implements IStorage, IDistributedStorage {
         ? "[]"
         : operations.one().getString("data");
   }
+
+  @Override
+  public void purgeNodeOperations() {}
 
 }
