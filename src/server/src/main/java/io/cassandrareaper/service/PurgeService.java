@@ -133,10 +133,18 @@ public final class PurgeService {
     return purgedRuns.get();
   }
 
+  /**
+   * Purges all expired metrics from storage. Expiration time is a property of the storage, stored either in
+   * the schema itself for databases with TTL or in the storage instance for databases which must be purged manually
+   */
   private void purgeMetrics() {
-    if (context.config.isInSidecarMode()) {
-      ((IDistributedStorage) context.storage).purgeMetrics();
-      ((IDistributedStorage) context.storage).purgeNodeOperations();
+    if (context.storage instanceof IDistributedStorage) {
+      IDistributedStorage storage = ((IDistributedStorage) context.storage);
+      if (context.config.isInSidecarMode()) {
+        storage.purgeMetrics();
+        storage.purgeNodeOperations();
+      }
+      storage.purgeNodeMetrics();
     }
   }
 }

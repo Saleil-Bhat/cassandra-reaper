@@ -81,7 +81,7 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
   private static final Logger LOG = LoggerFactory.getLogger(PostgresStorage.class);
   private static final int DEFAULT_LEADER_TIMEOUT_MIN = 10;  // pulled value from Cassandra DDL
   private static final int DEFAULT_REAPER_TIMEOUT_MIN = 3;   // pulled value from Cassandra DDL
-  private static final int DEFAULT_METRICS_TIMEOUT_MIN = 14400; // 10 days in minutes
+  private static final int DEFAULT_METRICS_TIMEOUT_MIN = 14400; // pulled value from Cassandra DDL (10 days in minutes)
   private static final int DEFAULT_NODE_OPERATIONS_TIMEOUT_MIN = 5;  // pulled value from Cassandra DDL
 
   protected final DBI jdbi;
@@ -789,7 +789,7 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
   public void saveHeartbeat() {
     beat();
     deleteOldReapers();
-    deleteOldMetrics();
+    purgeNodeMetrics();
   }
 
   @Override
@@ -867,6 +867,17 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
             UuidUtil.toSequenceId(runId),
             node
         );
+      }
+    }
+  }
+
+  @Override
+  public void purgeNodeMetrics() {
+    if (null != jdbi) {
+      try (Handle h = jdbi.open()) {
+        long expirationMinute = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis())
+                - reaperTimeout.toMinutes();
+        getPostgresStorage(h).deleteOldMetrics(expirationMinute);
       }
     }
   }
@@ -1009,17 +1020,6 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {
         getPostgresStorage(h).deleteOldReapers(getExpirationTime(reaperTimeout));
-      }
-    }
-  }
-
-  @VisibleForTesting
-  void deleteOldMetrics() {
-    if (null != jdbi) {
-      try (Handle h = jdbi.open()) {
-        long expirationMinute = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis())
-            - reaperTimeout.toMinutes();
-        getPostgresStorage(h).deleteOldMetrics(expirationMinute);
       }
     }
   }

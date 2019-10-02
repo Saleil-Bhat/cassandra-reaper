@@ -1522,6 +1522,9 @@ public final class CassandraStorage implements IStorage, IDistributedStorage {
     session.executeAsync(delNodeMetricsByNodePrepStmt.bind(minute, runId, node));
   }
 
+  @Override
+  public void purgeNodeMetrics() {}
+
   private static NodeMetrics createNodeMetrics(Row row) {
     return NodeMetrics.builder()
         .withNode(row.getString("node"))

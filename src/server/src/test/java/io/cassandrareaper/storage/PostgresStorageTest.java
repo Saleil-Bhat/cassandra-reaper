@@ -365,7 +365,7 @@ public class PostgresStorageTest {
     storage.storeNodeMetrics(runId, originalNm);
 
     // first delete attempt shouldn't do anything; expirationTime < timePartition
-    storage.deleteOldMetrics();
+    storage.purgeNodeMetrics();
     int numMetrics = handle.createQuery("SELECT COUNT(*) FROM node_metrics_v1")
         .mapTo(Integer.class)
         .first();
@@ -374,7 +374,7 @@ public class PostgresStorageTest {
     TimeUnit.SECONDS.sleep(60);
 
     // second delete attempt shouldn't do anything; expirationTime == timePartition and 'tie goes to the runner'
-    storage.deleteOldMetrics();
+    storage.purgeNodeMetrics();
     numMetrics = handle.createQuery("SELECT COUNT(*) FROM node_metrics_v1")
         .mapTo(Integer.class)
         .first();
@@ -383,7 +383,7 @@ public class PostgresStorageTest {
     TimeUnit.SECONDS.sleep(60);
 
     // third delete attempt should work; expirationTime > timePartition so the entry is expired
-    storage.deleteOldMetrics();
+    storage.purgeNodeMetrics();
     numMetrics = handle.createQuery("SELECT COUNT(*) FROM node_metrics_v1")
         .mapTo(Integer.class)
         .first();
