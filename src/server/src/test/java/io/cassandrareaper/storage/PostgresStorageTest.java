@@ -242,7 +242,7 @@ public class PostgresStorageTest {
   }
 
   @Test
-  public void testNodeMetricsByNode() {
+  public void testNodeMetricsByNode() throws InterruptedException {
     DBI dbi = new DBI(DB_URL);
     UUID reaperInstanceId = UUID.randomUUID();
     PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi);
@@ -253,6 +253,13 @@ public class PostgresStorageTest {
 
     UUID runId = UUID.randomUUID();
 
+    NodeMetrics nmRequest = NodeMetrics.builder()
+        .withNode("fake_node1")
+        .withCluster("fake_cluster")
+        .withDatacenter("NYDC")
+        .withRequested(true)
+        .build();
+
     NodeMetrics nm1 = NodeMetrics.builder()
         .withNode("fake_node1")
         .withCluster("fake_cluster")
@@ -262,6 +269,9 @@ public class PostgresStorageTest {
         .withActiveAnticompactions(1)
         .build();
 
+    // store a metric request and a metric response
+    storage.storeNodeMetrics(runId, nmRequest);
+    TimeUnit.MILLISECONDS.sleep(100);
     storage.storeNodeMetrics(runId, nm1);
 
     Optional<NodeMetrics> fetchedNm1Opt = storage.getNodeMetrics(runId, "fake_node1");
@@ -274,6 +284,7 @@ public class PostgresStorageTest {
     Assertions.assertThat(fetchedNm1.getPendingCompactions()).isEqualTo(nm1.getPendingCompactions());
     Assertions.assertThat(fetchedNm1.getActiveAnticompactions()).isEqualTo(nm1.getActiveAnticompactions());
 
+    // test that fetching a non-existent metric returns Optional.Empty()
     Optional<NodeMetrics> fetchedNm2Opt = storage.getNodeMetrics(runId, "fake_node2");
     Assertions.assertThat(fetchedNm2Opt.isPresent()).isFalse();
   }
@@ -344,7 +355,7 @@ public class PostgresStorageTest {
 
   @Test
   public void testDeleteOldNodeMetrics() throws InterruptedException {
-    System.out.println("Testing metrics timeout (this will take a few minutes)...");
+    System.out.println("Testing metrics timeout (this will take a minute)...");
     DBI dbi = new DBI(DB_URL);
     UUID reaperInstanceId = UUID.randomUUID();
     PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi, 1, 1, 1, 1);
@@ -364,25 +375,16 @@ public class PostgresStorageTest {
         .build();
     storage.storeNodeMetrics(runId, originalNm);
 
-    // first delete attempt shouldn't do anything; expirationTime < timePartition
+    // first delete attempt shouldn't do anything because the entry hasn't passed its expiration time
     storage.purgeNodeMetrics();
     int numMetrics = handle.createQuery("SELECT COUNT(*) FROM node_metrics_v1")
         .mapTo(Integer.class)
         .first();
     Assertions.assertThat(numMetrics).isEqualTo(1);
 
-    TimeUnit.SECONDS.sleep(60);
+    TimeUnit.SECONDS.sleep(61);
 
-    // second delete attempt shouldn't do anything; expirationTime == timePartition and 'tie goes to the runner'
-    storage.purgeNodeMetrics();
-    numMetrics = handle.createQuery("SELECT COUNT(*) FROM node_metrics_v1")
-        .mapTo(Integer.class)
-        .first();
-    Assertions.assertThat(numMetrics).isEqualTo(1);
-
-    TimeUnit.SECONDS.sleep(60);
-
-    // third delete attempt should work; expirationTime > timePartition so the entry is expired
+    // second delete attempt should work because entry has passed its expiration time
     storage.purgeNodeMetrics();
     numMetrics = handle.createQuery("SELECT COUNT(*) FROM node_metrics_v1")
         .mapTo(Integer.class)
@@ -401,26 +403,35 @@ public class PostgresStorageTest {
     handle.execute("DELETE from node_metrics_v1");
 
     UUID runId = UUID.randomUUID();
-    NodeMetrics originalNm = NodeMetrics.builder()
-        .withNode("fake_node")
+    NodeMetrics nm1 = NodeMetrics.builder()
+        .withNode("fake_node_1")
         .withCluster("fake_cluster")
         .withDatacenter("NYDC")
         .withHasRepairRunning(true)
         .withPendingCompactions(4)
         .withActiveAnticompactions(1)
         .build();
-    storage.storeNodeMetrics(runId, originalNm);
+    NodeMetrics nm2 = NodeMetrics.builder()
+        .withNode("fake_node2")
+        .withCluster("fake_cluster")
+        .withDatacenter("NYDC")
+        .withHasRepairRunning(true)
+        .withPendingCompactions(4)
+        .withActiveAnticompactions(1)
+        .build();
+    storage.storeNodeMetrics(runId, nm1);
+    storage.storeNodeMetrics(runId, nm2);
 
     int numMetrics = handle.createQuery("SELECT COUNT(*) FROM node_metrics_v1")
         .mapTo(Integer.class)
         .first();
-    Assertions.assertThat(numMetrics).isEqualTo(3);  // bc default reaper timeout is 3 minutes
+    Assertions.assertThat(numMetrics).isEqualTo(2);
 
-    // delete metric from table and verify delete succeeds
-    storage.deleteNodeMetrics(runId, "fake_node");
+    // delete metrics from table for fake_node_1 and verify delete succeeds
+    storage.deleteNodeMetrics(runId, "fake_node_1");
     numMetrics = handle.createQuery("SELECT COUNT(*) FROM node_metrics_v1")
         .mapTo(Integer.class)
         .first();
-    Assertions.assertThat(numMetrics).isEqualTo(2);
+    Assertions.assertThat(numMetrics).isEqualTo(1);
   }
 }

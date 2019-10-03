@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS "running_reapers" (
 );
 
 CREATE TABLE IF NOT EXISTS "node_metrics_v1" (
-  "time_partition"          BIGINT,
   "run_id"                  BIGINT,
+  "ts"                      TIMESTAMP WITH TIME ZONE,
   "node"                    TEXT,
   "cluster"                 TEXT,
   "datacenter"              TEXT,
@@ -21,5 +21,5 @@ CREATE TABLE IF NOT EXISTS "node_metrics_v1" (
   "pending_compactions"     INT,
   "has_repair_running"      BOOLEAN,
   "active_anticompactions"  INT,
-  PRIMARY KEY("run_id", "time_partition", "node")
+  PRIMARY KEY("run_id", "ts", "node")
 );

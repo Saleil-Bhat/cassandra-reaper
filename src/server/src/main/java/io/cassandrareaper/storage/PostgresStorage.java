@@ -55,7 +55,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -789,7 +788,6 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
   public void saveHeartbeat() {
     beat();
     deleteOldReapers();
-    purgeNodeMetrics();
   }
 
   @Override
@@ -807,20 +805,16 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
   public void storeNodeMetrics(UUID runId, NodeMetrics nodeMetrics) {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {
-        long minute = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis());
-        for (int offset = 0; offset < reaperTimeout.toMinutes(); ++offset) {
-          getPostgresStorage(h).storeNodeMetrics(
-              minute + offset,
-              UuidUtil.toSequenceId(runId),
-              nodeMetrics.getNode(),
-              nodeMetrics.getCluster(),
-              nodeMetrics.getDatacenter(),
-              nodeMetrics.isRequested(),
-              nodeMetrics.getPendingCompactions(),
-              nodeMetrics.hasRepairRunning(),
-              nodeMetrics.getActiveAnticompactions()
-          );
-        }
+        getPostgresStorage(h).storeNodeMetrics(
+            UuidUtil.toSequenceId(runId),
+            nodeMetrics.getNode(),
+            nodeMetrics.getCluster(),
+            nodeMetrics.getDatacenter(),
+            nodeMetrics.isRequested(),
+            nodeMetrics.getPendingCompactions(),
+            nodeMetrics.hasRepairRunning(),
+            nodeMetrics.getActiveAnticompactions()
+        );
       }
     }
   }
@@ -829,10 +823,10 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
   public Collection<NodeMetrics> getNodeMetrics(UUID runId) {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {
-        long minute = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis());
+        Instant expirationTime = getExpirationTime(reaperTimeout);
         return getPostgresStorage(h).getNodeMetrics(
-            minute,
-            UuidUtil.toSequenceId(runId)
+          UuidUtil.toSequenceId(runId),
+          expirationTime
         );
       }
     }
@@ -843,10 +837,10 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
   public Optional<NodeMetrics> getNodeMetrics(UUID runId, String node) {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {
-        long minute = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis());
+        Instant expirationTime = getExpirationTime(reaperTimeout);
         NodeMetrics nm = getPostgresStorage(h).getNodeMetricsByNode(
-            minute,
             UuidUtil.toSequenceId(runId),
+            expirationTime,
             node
         );
         if (nm != null) {
@@ -861,9 +855,7 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
   public void deleteNodeMetrics(UUID runId, String node) {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {
-        long minute = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis());
         getPostgresStorage(h).deleteNodeMetricsByNode(
-            minute,
             UuidUtil.toSequenceId(runId),
             node
         );
@@ -875,9 +867,8 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
   public void purgeNodeMetrics() {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {
-        long expirationMinute = TimeUnit.MILLISECONDS.toMinutes(System.currentTimeMillis())
-                - reaperTimeout.toMinutes();
-        getPostgresStorage(h).deleteOldMetrics(expirationMinute);
+        Instant expirationTime = getExpirationTime(reaperTimeout);
+        getPostgresStorage(h).purgeOldNodeMetrics(expirationTime);
       }
     }
   }
@@ -959,6 +950,7 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
         IStoragePostgreSql storage = getPostgresStorage(h);
         Instant expirationTime = getExpirationTime(metricsTimeout);
         storage.purgeOldMetrics(expirationTime);
+        storage.purgeOldSourceNodes(expirationTime);
       }
     }
   }
@@ -988,9 +980,8 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
   public void purgeNodeOperations() {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {
-        IStoragePostgreSql storage = getPostgresStorage(h);
         Instant expirationTime = getExpirationTime(nodeOperationsTimeout);
-        storage.purgeOldNodeOperations(expirationTime);
+        getPostgresStorage(h).purgeOldNodeOperations(expirationTime);
       }
     }
   }

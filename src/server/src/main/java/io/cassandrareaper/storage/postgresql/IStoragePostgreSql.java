@@ -315,27 +315,28 @@ public interface IStoragePostgreSql {
       + " WHERE "
       + "last_heartbeat >= :expirationTime";
 
-  String SQL_STORE_NODE_METRICS =  "INSERT INTO node_metrics_v1 (time_partition,run_id,node,datacenter,"
+  String SQL_STORE_NODE_METRICS =  "INSERT INTO node_metrics_v1 (run_id,ts,node,datacenter,"
       + "cluster,requested,pending_compactions,has_repair_running,active_anticompactions)"
       + " VALUES "
-      + "(:timePartition, :runId, :node, :datacenter, :cluster, :requested, :pendingCompactions, :hasRepairRunning, "
+      + "(:runId, now(), :node, :datacenter, :cluster, :requested, :pendingCompactions, :hasRepairRunning, "
       + ":activeAntiCompactions)";
 
   String SQL_GET_NODE_METRICS = "SELECT * FROM node_metrics_v1"
       + " WHERE "
-      + "time_partition = :timePartition AND run_id = :runId";
+      + "run_id = :runId AND ts > :expirationTime";
 
   String SQL_GET_NODE_METRICS_BY_NODE = "SELECT * FROM node_metrics_v1"
-      + " WHERE "
-      + "time_partition = :timePartition AND run_id = :runId AND node = :node";
+      + " WHERE"
+      + " run_id = :runId AND ts > :expirationTime AND node = :node"
+      + " ORDER BY ts DESC LIMIT 1";
 
   String SQL_DELETE_NODE_METRICS_BY_NODE = "DELETE FROM node_metrics_v1"
       + " WHERE "
-      + " time_partition = :timePartition AND run_id = :runId AND node = :node";
+      + " run_id = :runId AND node = :node";
 
-  String SQL_DELETE_OLD_METRICS = "DELETE FROM node_metrics_v1"
+  String SQL_PURGE_OLD_NODE_METRICS = "DELETE FROM node_metrics_v1"
       + " WHERE"
-      + " time_partition < :expirationMinute";
+      + " ts < :expirationTime";
 
   // sidecar-mode metrics
   //
@@ -711,7 +712,6 @@ public interface IStoragePostgreSql {
 
   @SqlUpdate(SQL_STORE_NODE_METRICS)
   int storeNodeMetrics(
-      @Bind("timePartition") long timePartition,
       @Bind("runId") long runId,
       @Bind("node") String node,
       @Bind("cluster") String cluster,
@@ -725,28 +725,27 @@ public interface IStoragePostgreSql {
   @SqlQuery(SQL_GET_NODE_METRICS)
   @Mapper(NodeMetricsMapper.class)
   Collection<NodeMetrics> getNodeMetrics(
-      @Bind("timePartition") long timePartition,
-      @Bind("runId") long runId
+      @Bind("runId") long runId,
+      @Bind("expirationTime") Instant expirationTime
   );
 
   @SqlQuery(SQL_GET_NODE_METRICS_BY_NODE)
   @Mapper(NodeMetricsMapper.class)
   NodeMetrics getNodeMetricsByNode(
-      @Bind("timePartition") long timePartition,
       @Bind("runId") long runId,
+      @Bind("expirationTime") Instant expirationTime,
       @Bind("node") String node
   );
 
   @SqlUpdate(SQL_DELETE_NODE_METRICS_BY_NODE)
   int deleteNodeMetricsByNode(
-      @Bind("timePartition") long timePartition,
       @Bind("runId") long runId,
       @Bind("node") String node
   );
 
-  @SqlUpdate(SQL_DELETE_OLD_METRICS)
-  int deleteOldMetrics(
-      @Bind("expirationMinute") long expirationMinute
+  @SqlUpdate(SQL_PURGE_OLD_NODE_METRICS)
+  int purgeOldNodeMetrics(
+      @Bind("expirationTime") Instant expirationTime
   );
 
   @SqlUpdate(SQL_ADD_SOURCE_NODE)
