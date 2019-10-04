@@ -1,19 +1,19 @@
 CREATE TABLE IF NOT EXISTS "node_metrics_v2_source_nodes" (
-  "source_node_id" SERIAL PRIMARY KEY,
+  "source_node_id" SERIAL UNIQUE,
   "cluster" TEXT,
   "host" TEXT,
   "last_updated" TIMESTAMP WITH TIME ZONE,
-  UNIQUE("cluster", "host")
+  PRIMARY KEY ("cluster", "host")
 );
 
 CREATE TABLE IF NOT EXISTS "node_metrics_v2_metric_types" (
-  "metric_type_id" SERIAL PRIMARY KEY,
+  "metric_type_id" SERIAL UNIQUE,
   "metric_domain" TEXT,
   "metric_type" TEXT,
   "metric_scope" TEXT,
   "metric_name" TEXT,
   "metric_attribute" TEXT,
-  UNIQUE("metric_domain", "metric_type", "metric_scope", "metric_name", "metric_attribute")
+  PRIMARY KEY ("metric_domain", "metric_type", "metric_scope", "metric_name", "metric_attribute")
 );
 
 CREATE TABLE IF NOT EXISTS "node_metrics_v2" (
