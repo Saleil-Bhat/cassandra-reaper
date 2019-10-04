@@ -18,6 +18,7 @@
 package io.cassandrareaper.storage;
 
 import io.cassandrareaper.AppContext;
+import io.cassandrareaper.core.GenericMetric;
 import io.cassandrareaper.core.NodeMetrics;
 import io.cassandrareaper.storage.postgresql.IStoragePostgreSql;
 import io.cassandrareaper.storage.postgresql.UuidUtil;
@@ -37,6 +38,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -45,6 +47,7 @@ import java.util.concurrent.TimeUnit;
 import com.ibatis.common.jdbc.ScriptRunner;
 import org.fest.assertions.api.Assertions;
 import org.h2.tools.Server;
+import org.joda.time.DateTime;
 import org.junit.Before;
 import org.junit.Test;
 import org.skife.jdbi.v2.DBI;
@@ -308,10 +311,135 @@ public class PostgresStorageTest {
     Assertions.assertThat(data.equals("data2"));
   }
 
+  @Test
+  public void testGenericMetricsByHostandCluster() {
+    DBI dbi = new DBI(DB_URL);
+    UUID reaperInstanceId = UUID.randomUUID();
+    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi);
+    Assertions.assertThat(storage.isStorageConnected()).isTrue();
+
+    Handle handle = dbi.open();
+    handle.execute("DELETE from node_metrics_v2");
+    handle.execute("DELETE from node_metrics_v2_source_nodes");
+    handle.execute("DELETE from node_metrics_v2_metric_types");
+
+    DateTime now = DateTime.now();
+    GenericMetric metric1 = GenericMetric.builder()
+        .withClusterName("fake_cluster")
+        .withHost("fake_host1")
+        .withTs(now)
+        .withMetricDomain("org.apache.cassandra.metrics")
+        .withMetricType("ThreadPool")
+        .withMetricName("PendingTasks")
+        .withMetricScope("MutationStage")
+        .withMetricAttribute("fake_attribute")
+        .withValue(12)
+        .build();
+    GenericMetric metric2 = GenericMetric.builder()  // different metric, different host
+        .withClusterName("fake_cluster")
+        .withHost("fake_host2")
+        .withTs(now)
+        .withMetricDomain("org.apache.cassandra.metrics")
+        .withMetricType("ThreadPool")
+        .withMetricName("ActiveTasks")
+        .withMetricScope("MutationStage")
+        .withMetricAttribute("fake_attribute")
+        .withValue(14)
+        .build();
+
+    storage.storeMetric(metric1);
+    storage.storeMetric(metric2);
+
+    // verify that the two metrics above can be queried by cluster name
+    Set<String> expectedMetrics = new HashSet<>();
+    expectedMetrics.add("PendingTasks");
+    expectedMetrics.add("ActiveTasks");
+    List<GenericMetric> retrievedMetrics = storage.getMetrics(
+        "fake_cluster",
+        Optional.empty(),
+        "org.apache.cassandra.metrics",
+        "ThreadPool",
+        now.getMillis()
+    );
+    for (GenericMetric retrievedMetric : retrievedMetrics) {
+      Assertions.assertThat(expectedMetrics.contains(retrievedMetric.getMetricName()));
+      expectedMetrics.remove(retrievedMetric.getMetricName());
+    }
+
+    // verify that metrics can be queried by host
+    retrievedMetrics = storage.getMetrics(
+        "fake_cluster",
+        Optional.of("fake_host2"),
+        "org.apache.cassandra.metrics",
+        "ThreadPool",
+        now.getMillis()
+    );
+    Assertions.assertThat(retrievedMetrics.size() == 1);
+    GenericMetric retrievedMetric = retrievedMetrics.get(0);
+    Assertions.assertThat(retrievedMetric.getMetricName().equals("ActiveTasks"));
+  }
+
+  @Test
+  public void testGenericMetricExpiration() {
+    DBI dbi = new DBI(DB_URL);
+    UUID reaperInstanceId = UUID.randomUUID();
+    PostgresStorage storage = new PostgresStorage(reaperInstanceId, dbi);
+    Assertions.assertThat(storage.isStorageConnected()).isTrue();
+
+    Handle handle = dbi.open();
+    handle.execute("DELETE from node_metrics_v2");
+    handle.execute("DELETE from node_metrics_v2_source_nodes");
+    handle.execute("DELETE from node_metrics_v2_metric_types");
+
+
+    DateTime expirationTime = DateTime.now().minusMinutes(3);
+    GenericMetric expiredMetric = GenericMetric.builder()
+        .withClusterName("fake_cluster")
+        .withHost("fake_host1")
+        .withTs(expirationTime)
+        .withMetricDomain("org.apache.cassandra.metrics")
+        .withMetricType("ThreadPool")
+        .withMetricName("PendingTasks")
+        .withMetricScope("MutationStage")
+        .withMetricAttribute("fake_attribute")
+        .withValue(12)
+        .build();
+    storage.storeMetric(expiredMetric);
+
+    // verify that the metric was stored in the DB
+    List<GenericMetric> retrievedMetrics = storage.getMetrics(
+        "fake_cluster",
+        Optional.empty(),
+        "org.apache.cassandra.metrics",
+        "ThreadPool",
+        expirationTime.getMillis()
+    );
+    Assertions.assertThat(retrievedMetrics.size() == 1);
+    List<Map<String, Object>> rs = handle.select("SELECT COUNT(*) AS count FROM node_metrics_v2_source_nodes");
+    long numSourceNodes = (long) rs.get(0).get("count");
+    Assertions.assertThat(numSourceNodes == 1);
+
+    // verify that on purgeMetrics(), metric is purged since it's older than 3 minutes
+    storage.purgeMetrics();
+    retrievedMetrics = storage.getMetrics(
+        "fake_cluster",
+        Optional.empty(),
+        "org.apache.cassandra.metrics",
+        "ThreadPool",
+        expirationTime.getMillis()
+    );
+    Assertions.assertThat(retrievedMetrics.size() == 0);
+
+    // verify that source nodes have also been purged
+    rs = handle.select("SELECT COUNT(*) AS count FROM node_metrics_v2_source_nodes");
+    numSourceNodes = (long) rs.get(0).get("count");
+    Assertions.assertThat(numSourceNodes == 1);
+    Assertions.assertThat(numSourceNodes == 0);
+  }
+
   /*
   The following tests rely on timeouts; will take a few minutes to complete
    */
-
   @Test
   public void testUpdateLeaderEntry() throws InterruptedException {
     System.out.println("Testing leader timeout (this will take a minute)...");

@@ -40,14 +40,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-import org.skife.jdbi.v2.TransactionIsolationLevel;
 import org.skife.jdbi.v2.sqlobject.Bind;
 import org.skife.jdbi.v2.sqlobject.BindBean;
 import org.skife.jdbi.v2.sqlobject.GetGeneratedKeys;
 import org.skife.jdbi.v2.sqlobject.SqlBatch;
 import org.skife.jdbi.v2.sqlobject.SqlQuery;
 import org.skife.jdbi.v2.sqlobject.SqlUpdate;
-import org.skife.jdbi.v2.sqlobject.Transaction;
 import org.skife.jdbi.v2.sqlobject.customizers.BatchChunkSize;
 import org.skife.jdbi.v2.sqlobject.customizers.Mapper;
 
@@ -340,15 +338,17 @@ public interface IStoragePostgreSql {
 
   // sidecar-mode metrics
   //
+  String SQL_UPDATE_SOURCE_NODE_TIMESTAMP = "UPDATE node_metrics_v2_source_nodes"
+      + " SET last_updated = :timestamp"
+      + " WHERE cluster = :cluster AND host = :host";
+
   String SQL_ADD_SOURCE_NODE = "INSERT INTO node_metrics_v2_source_nodes (cluster, host, last_updated)"
-          + " VALUES (:cluster, :host, now())"
-          + " ON CONFLICT (cluster, host) DO UPDATE SET last_updated = now()";
+          + " VALUES (:cluster, :host, :timestamp)";
 
   String SQL_ADD_METRIC_TYPE = "INSERT INTO node_metrics_v2_metric_types"
           + " (metric_domain, metric_type, metric_scope, metric_name, metric_attribute)"
           + " VALUES"
-          + " (:metricDomain, :metricType, :metricScope, :metricName, :metricAttribute)"
-          + " ON CONFLICT DO NOTHING";
+          + " (:metricDomain, :metricType, :metricScope, :metricName, :metricAttribute)";
 
   String SQL_GET_SOURCE_NODE_ID = "SELECT source_node_id FROM node_metrics_v2_source_nodes"
           + " WHERE cluster = :cluster AND host = :host";
@@ -362,8 +362,8 @@ public interface IStoragePostgreSql {
           + " VALUES ("
           + " (" + SQL_GET_METRIC_TYPE_ID + "),"
           + " (" + SQL_GET_SOURCE_NODE_ID + "),"
-          + " now(),"
-          + " :value )";
+          + " :timestamp,"
+          + " :value)";
 
   String SQL_GET_METRICS_FOR_HOST = "SELECT cluster, host, metric_domain, metric_type, metric_scope, metric_name,"
           + " metric_attribute, ts, value"
@@ -749,13 +749,21 @@ public interface IStoragePostgreSql {
   );
 
   @SqlUpdate(SQL_ADD_SOURCE_NODE)
-  int addMetricSourceNode(
+  int insertMetricSourceNode(
       @Bind("cluster") String cluster,
-      @Bind("host") String host
+      @Bind("host") String host,
+      @Bind("timestamp") Instant timestamp
+  );
+
+  @SqlUpdate(SQL_UPDATE_SOURCE_NODE_TIMESTAMP)
+  int updateMetricSourceNodeTimestamp(
+      @Bind("cluster") String cluster,
+      @Bind("host") String host,
+      @Bind("timestamp") Instant timestamp
   );
 
   @SqlUpdate(SQL_ADD_METRIC_TYPE)
-  int addMetricType(
+  int insertMetricType(
       @Bind("metricDomain") String metricDomain,
       @Bind("metricType") String metricType,
       @Bind("metricScope") String metricScope,
@@ -767,6 +775,7 @@ public interface IStoragePostgreSql {
   int insertMetric(
       @Bind("cluster") String cluster,
       @Bind("host") String host,
+      @Bind("timestamp") Instant timestamp,
       @Bind("metricDomain") String metricDomain,
       @Bind("metricType") String metricType,
       @Bind("metricScope") String metricScope,
@@ -774,29 +783,6 @@ public interface IStoragePostgreSql {
       @Bind("metricAttribute") String metricAttribute,
       @Bind("value") double value
   );
-
-  @SqlUpdate
-  @Transaction(TransactionIsolationLevel.SERIALIZABLE)
-  default int storeMetric(GenericMetric metric) {
-    addMetricSourceNode(metric.getClusterName(), metric.getHost());
-    addMetricType(
-        metric.getMetricDomain(),
-        metric.getMetricType(),
-        metric.getMetricScope(),
-        metric.getMetricName(),
-        metric.getMetricAttribute()
-    );
-    return insertMetric(
-        metric.getClusterName(),
-        metric.getHost(),
-        metric.getMetricDomain(),
-        metric.getMetricType(),
-        metric.getMetricScope(),
-        metric.getMetricName(),
-        metric.getMetricAttribute(),
-        metric.getValue()
-    );
-  }
 
   @SqlQuery(SQL_GET_METRICS_FOR_HOST)
   @Mapper(GenericMetricMapper.class)

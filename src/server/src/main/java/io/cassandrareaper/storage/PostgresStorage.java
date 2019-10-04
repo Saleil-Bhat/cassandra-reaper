@@ -904,7 +904,49 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
   public void storeMetric(GenericMetric metric) {
     if (null != jdbi) {
       try (Handle h = jdbi.open()) {
-        getPostgresStorage(h).storeMetric(metric);
+        Instant metricTs = Instant.ofEpochMilli(metric.getTs().getMillis());
+        IStoragePostgreSql storage = getPostgresStorage(h);
+        int rowsUpdated = storage.updateMetricSourceNodeTimestamp(
+            metric.getClusterName(),
+            metric.getHost(),
+            metricTs
+        );
+        if (rowsUpdated == 0) {
+          try {
+            storage.insertMetricSourceNode(metric.getClusterName(), metric.getHost(), metricTs);
+          } catch (UnableToExecuteStatementException e) {
+            if (!JdbiExceptionUtil.isDuplicateKeyError(e)) {
+              LOG.error("Unable to update GenericMetric source nodes table");
+              throw e;
+            }
+          }
+        }
+
+        try {
+          storage.insertMetricType(
+              metric.getMetricDomain(),
+              metric.getMetricType(),
+              metric.getMetricScope(),
+              metric.getMetricName(),
+              metric.getMetricAttribute()
+          );
+        } catch (UnableToExecuteStatementException e) {
+          if (!JdbiExceptionUtil.isDuplicateKeyError(e)) {
+            LOG.error("Unable to update GenericMetric metric types table");
+            throw e;
+          }
+        }
+        storage.insertMetric(
+            metric.getClusterName(),
+            metric.getHost(),
+            metricTs,
+            metric.getMetricDomain(),
+            metric.getMetricType(),
+            metric.getMetricScope(),
+            metric.getMetricName(),
+            metric.getMetricAttribute(),
+            metric.getValue()
+        );
       }
     }
   }
@@ -1013,6 +1055,10 @@ public class PostgresStorage implements IStorage, IDistributedStorage {
         getPostgresStorage(h).deleteOldReapers(getExpirationTime(reaperTimeout));
       }
     }
+  }
+
+  private void insertGenericMetricSourceNode(GenericMetric metric) {
+
   }
 
   private static Instant getExpirationTime(Duration timeout) {
